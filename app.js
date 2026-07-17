@@ -69,7 +69,7 @@ function formatDate(value) {
 // "2011-6" -> "6/2011"
 function formatMonthYear(value) {
   if (!value) return null;
-  const match = /^(\d{4})-(\d{1,2})$/.exec(String(value));
+  const match = /^(\d{4})-(\d{1,2})/.exec(String(value));
   if (!match) return String(value);
   return `${match[2]}/${match[1]}`;
 }
@@ -137,8 +137,7 @@ function setBanner(banner) {
   }
 }
 
-function appendDetailRow(label, value, skipEmpty) {
-  if (skipEmpty && (value == null || value === "")) return;
+function appendDetailRow(label, value) {
   const dt = document.createElement("dt");
   dt.textContent = label;
   const dd = document.createElement("dd");
@@ -153,7 +152,7 @@ function renderCard({ plateDigits, title, banner, rows }) {
   setBanner(banner);
   resultDetails.innerHTML = "";
   for (const [label, value] of rows) {
-    appendDetailRow(label, value, false);
+    appendDetailRow(label, value);
   }
   resultCard.classList.remove("hidden");
 }
@@ -286,21 +285,55 @@ function renderRecalls(recalls) {
   recallBox.classList.remove("hidden");
 }
 
+// שורות ההעשרה נוצרות מראש מוסתרות, בסדר קבוע, כדי שהתצוגה לא תשתנה
+// לפי סדר ההגעה של התשובות מהרשת
+function addPlaceholderRow(key, label) {
+  const dt = document.createElement("dt");
+  dt.textContent = label;
+  dt.hidden = true;
+  dt.dataset.enrich = key;
+  const dd = document.createElement("dd");
+  dd.hidden = true;
+  dd.dataset.enrich = key;
+  resultDetails.appendChild(dt);
+  resultDetails.appendChild(dd);
+}
+
+function fillPlaceholderRow(key, value) {
+  if (value == null || value === "") return;
+  const dd = resultDetails.querySelector(`dd[data-enrich="${key}"]`);
+  const dt = resultDetails.querySelector(`dt[data-enrich="${key}"]`);
+  if (!dd || !dt) return;
+  dd.textContent = String(value);
+  dt.hidden = false;
+  dd.hidden = false;
+}
+
 function startEnrichments(record, plateNumber, options, token) {
   const guard = (fn) => (value) => {
     if (token === searchToken) fn(value);
   };
   const ignore = () => {};
 
+  const wltpEligible =
+    options.wltp && record.tozeret_cd != null && record.degem_cd != null && record.shnat_yitzur != null;
+
+  if (options.towHitch) addPlaceholderRow("towHitch", "וו גרירה");
+  if (wltpEligible) {
+    addPlaceholderRow("horsePower", "כוח סוס");
+    addPlaceholderRow("safetyScore", "ניקוד בטיחות");
+    addPlaceholderRow("safetyLevel", "רמת אבזור בטיחותי");
+  }
+
   if (options.towHitch) {
     ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
       .then(guard((records) => {
-        appendDetailRow("וו גרירה", records[0]?.grira_nm, true);
+        fillPlaceholderRow("towHitch", records[0]?.grira_nm);
       }))
       .catch(ignore);
   }
 
-  if (options.wltp && record.tozeret_cd != null && record.degem_cd != null && record.shnat_yitzur != null) {
+  if (wltpEligible) {
     const filters = {
       tozeret_cd: record.tozeret_cd,
       degem_cd: record.degem_cd,
@@ -311,9 +344,9 @@ function startEnrichments(record, plateNumber, options, token) {
       .then(guard((records) => {
         const model = records[0];
         if (!model) return;
-        appendDetailRow("כוח סוס", withUnit(model.koah_sus, 'כ"ס'), true);
-        appendDetailRow("ניקוד בטיחות", model.nikud_betihut, true);
-        appendDetailRow("רמת אבזור בטיחותי", model.ramat_eivzur_betihuty, true);
+        fillPlaceholderRow("horsePower", withUnit(model.koah_sus, 'כ"ס'));
+        fillPlaceholderRow("safetyScore", model.nikud_betihut);
+        fillPlaceholderRow("safetyLevel", model.ramat_eivzur_betihuty);
       }))
       .catch(ignore);
   }
