@@ -224,6 +224,8 @@ function hideResult() {
     box.classList.add("hidden");
     box.innerHTML = "";
   }
+  recallBox.classList.remove("recall-ok", "recall-unavailable");
+  permitBox.classList.remove("permit-none");
 }
 
 function setBanner(banner) {
@@ -583,7 +585,7 @@ function prepareHistoryBox() {
   const title = document.createElement("strong");
   title.textContent = "היסטוריית הרכב";
   historyBox.appendChild(title);
-  for (const key of ["km", "facts", "flags", "owners"]) {
+  for (const key of ["km", "facts", "flags", "owners", "nodata"]) {
     const slot = document.createElement("div");
     slot.className = `history-slot history-${key}`;
     slot.dataset.history = key;
@@ -643,6 +645,15 @@ function renderVehicleHistory(record) {
       slot.appendChild(chip);
     }
   }
+}
+
+// מוצג רק כששתי בקשות ההיסטוריה חזרו ריקות בהצלחה — היעדר נתונים במאגר
+// חלקי אינו "אין היסטוריה", ולכן הנוסח מדגיש את מגבלת הכיסוי
+function renderHistoryNoData() {
+  const slot = showHistorySlot("nodata");
+  const p = document.createElement("p");
+  p.textContent = "לא נמצאו נתוני היסטוריה לרכב זה — המאגר חלקי ומכסה בעיקר רכבים חדשים";
+  slot.appendChild(p);
 }
 
 function renderOwnershipHistory(records) {
@@ -719,6 +730,7 @@ function fillIndicator(key, text) {
 }
 
 function renderPermit(permit) {
+  permitBox.classList.remove("permit-none");
   permitBox.innerHTML = "";
   const title = document.createElement("strong");
   title.textContent = "🅿 לרכב זה תו חניה לנכה";
@@ -735,7 +747,18 @@ function renderPermit(permit) {
   permitBox.classList.remove("hidden");
 }
 
+// מאגר תווי החניה מלא ומוסמך — תשובה ריקה (בהצלחה) פירושה שאין תו
+function renderPermitNone() {
+  permitBox.classList.add("permit-none");
+  permitBox.innerHTML = "";
+  const p = document.createElement("p");
+  p.textContent = "אין תו חניה לנכה רשום לרכב זה";
+  permitBox.appendChild(p);
+  permitBox.classList.remove("hidden");
+}
+
 function renderRecalls(recalls) {
+  recallBox.classList.remove("recall-ok", "recall-unavailable");
   recallBox.innerHTML = "";
   const title = document.createElement("strong");
   title.textContent =
@@ -758,6 +781,29 @@ function renderRecalls(recalls) {
       recallBox.appendChild(fix);
     }
   }
+  recallBox.classList.remove("hidden");
+}
+
+// מאגר הריקולים הפתוחים מוסמך — תשובה ריקה (בהצלחה) פירושה שאין ריקול פתוח
+function renderRecallsAllClear() {
+  recallBox.classList.remove("recall-unavailable");
+  recallBox.classList.add("recall-ok");
+  recallBox.innerHTML = "";
+  const strong = document.createElement("strong");
+  strong.textContent = "✅ אין קריאות ריקול פתוחות לרכב זה";
+  recallBox.appendChild(strong);
+  recallBox.classList.remove("hidden");
+}
+
+// כשל רשת אינו "אין ריקולים" — מציגים במפורש שהבדיקה לא הצליחה,
+// כדי ששתיקה לא תתפרש כתשובה שלילית
+function renderRecallsUnavailable() {
+  recallBox.classList.remove("recall-ok");
+  recallBox.classList.add("recall-unavailable");
+  recallBox.innerHTML = "";
+  const p = document.createElement("p");
+  p.textContent = "לא ניתן היה לבדוק קריאות ריקול כעת";
+  recallBox.appendChild(p);
   recallBox.classList.remove("hidden");
 }
 
@@ -943,16 +989,25 @@ function startEnrichments(record, plateNumber, options, token) {
   }
 
   // היסטוריית רכב והחלפות בעלות — הכיסוי חלקי (בעיקר רכבים חדשים),
-  // לכן הסעיף מוצג רק כשיש נתונים ולעולם לא עם "—"
+  // לכן הסעיף מוצג רק כשיש נתונים ולעולם לא עם "—".
+  // שורת "לא נמצאו נתונים" מוצגת רק כששתי הבקשות חזרו ריקות בהצלחה;
+  // בקשה שנכשלה לא נספרת, כדי לא להסיק "אין" מתוך שגיאת רשת
   prepareHistoryBox();
+  let historyEmptyCount = 0;
+  const noteHistoryEmpty = () => {
+    historyEmptyCount += 1;
+    if (historyEmptyCount === 2) renderHistoryNoData();
+  };
   ckanSearch(RESOURCES.vehicleHistory, { mispar_rechev: plateNumber })
     .then(guard((records) => {
       if (records[0]) renderVehicleHistory(records[0]);
+      else noteHistoryEmpty();
     }))
     .catch(ignore);
   ckanSearch(RESOURCES.ownershipHistory, { mispar_rechev: plateNumber }, 20)
     .then(guard((records) => {
-      renderOwnershipHistory(records);
+      if (records.length) renderOwnershipHistory(records);
+      else noteHistoryEmpty();
     }))
     .catch(ignore);
 
@@ -966,20 +1021,27 @@ function startEnrichments(record, plateNumber, options, token) {
       .catch(ignore);
   }
 
-  // תו חניה לנכה נבדק לכל רכב שנמצא, בכל אחד מהמאגרים
+  // תו חניה לנכה נבדק לכל רכב שנמצא, בכל אחד מהמאגרים.
+  // המאגר מוסמך, ולכן תשובה ריקה מוצגת כ"אין תו" מפורש; כשל — שתיקה.
   // שימו לב: שמות השדות במאגר זה מכילים רווחים
   ckanSearch(RESOURCES.disabledPermit, { "MISPAR RECHEV": plateNumber })
     .then(guard((records) => {
       if (records[0]) renderPermit(records[0]);
+      else renderPermitNone();
     }))
     .catch(ignore);
 
   if (options.recalls) {
     // שימו לב: שמות השדות במאגר הריקולים באותיות גדולות.
-    // אחרי מציאת ריקולים נשלפים פרטי התיקון לפי RECALL_ID (מסנן-מערך = OR)
+    // אחרי מציאת ריקולים נשלפים פרטי התיקון לפי RECALL_ID (מסנן-מערך = OR).
+    // תשובה ריקה = "אין ריקולים פתוחים" מפורש; כשל = "לא ניתן לבדוק" —
+    // לעולם לא מסיקים "אין" מתוך שגיאה
     ckanSearch(RESOURCES.recalls, { MISPAR_RECHEV: plateNumber }, 10)
       .then(guard((records) => {
-        if (!records.length) return;
+        if (!records.length) {
+          renderRecallsAllClear();
+          return;
+        }
         renderRecalls(records);
         const recallIds = [...new Set(records.map((r) => r.RECALL_ID).filter((id) => id != null))];
         if (!recallIds.length) return;
@@ -987,7 +1049,7 @@ function startEnrichments(record, plateNumber, options, token) {
           .then(guard(fillRecallDetails))
           .catch(ignore);
       }))
-      .catch(ignore);
+      .catch(guard(renderRecallsUnavailable));
   }
 }
 

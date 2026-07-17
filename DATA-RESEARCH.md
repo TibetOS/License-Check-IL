@@ -84,8 +84,10 @@ and commercial vehicles up to 3,500 kg from 1998+.
 
 Two per-plate resources that together give a real "vehicle history" view.
 Coverage is **partial** (mostly newer vehicles) — a missing row means "no
-data", not "no history", so the app shows the section only on a hit and
-never renders "—" for it.
+data", not "no history", so the app never renders "—" or a fake negative
+here. When **both** lookups succeed with empty results it shows an explicit
+"no data — partial registry" note; a failed request shows nothing, because
+absence must never be inferred from an error.
 
 | Resource | ID | Content |
 |---|---|---|
@@ -114,21 +116,30 @@ dealer) and month — still no personal data, consistent with the brief.
    open-recall warning from the recalls resource (mind its uppercase field
    names) joined with the recall catalog for importer/phone/fix details;
    vehicle history + ownership changes; the three small indicator lists.
-4. **Field-name quirks**: not all registries share the lowercase snake_case
+4. **Negative results have three semantics** and the UI distinguishes them:
+   *authoritative* registries (open recalls, disabled-parking permits) — an
+   empty success is a real "no" and is shown explicitly ("אין קריאות ריקול
+   פתוחות" in green, "אין תו חניה" muted); *partial* registries (vehicle
+   history) — an empty success is only "no data" and is worded as such;
+   *errors* — never rendered as a negative (the recall box shows an explicit
+   "לא ניתן היה לבדוק" on failure). Niche membership lists (safety-discount,
+   DPF, cargo anchors) and model-table joins stay hidden on a miss — their
+   absence is meaningless for most vehicles.
+5. **Field-name quirks**: not all registries share the lowercase snake_case
    schema — the recalls and disabled-permit resources use uppercase (and even
    embedded spaces) in `filters` keys. Copy field IDs exactly from each
    resource's schema.
-5. **Zero-padded text plates in the cancellation archives**: the two archive
+6. **Zero-padded text plates in the cancellation archives**: the two archive
    resources store *every* column as text, and `mispar_rechev` is padded to
    8 characters (`"04252235"`). A numeric filter there is an **API error**
    (not just an empty result) and an unpadded string matches nothing — query
    them with `String(plate).padStart(8, "0")`. All other registries store the
    plate as a number and match either numbers or unpadded strings.
-6. **Array filters work as OR**: `filters={"RECALL_ID":[15947,15781]}` returns
+7. **Array filters work as OR**: `filters={"RECALL_ID":[15947,15781]}` returns
    both rows — one request resolves all recall details for a vehicle.
-7. **Tire codes decode client-side**: the continuation resource's
+8. **Tire codes decode client-side**: the continuation resource's
    `kod_omes_tzmig_*` / `kod_mehirut_tzmig_*` are standard ETRTO load-index /
    speed-symbol codes (88 + H → 560 kg, 210 km/h) — a static lookup table in
    the app, no extra request.
-8. Don't use `datastore_search_sql` (WAF-blocked), and don't attempt joins
+9. Don't use `datastore_search_sql` (WAF-blocked), and don't attempt joins
    server-side — do the 1-2 extra keyed lookups client-side instead.

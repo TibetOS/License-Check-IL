@@ -17,6 +17,12 @@
   box-sizing: border-box;
 }
 
+/* מאפיין hidden חייב לגבור גם על כללי display מפורשים (למשל flex של
+   משבצת ההיסטוריה או inline-block של צ'יפים) — אחרת משבצות ריקות מודלפות */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", "Heebo", Arial, sans-serif;
@@ -245,6 +251,12 @@ body {
   font-size: 0.9rem;
 }
 
+.history-nodata p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .history-owners-head {
   display: flex;
   align-items: center;
@@ -376,6 +388,17 @@ body {
   font-size: 0.85rem;
 }
 
+/* אין תו חניה — עיצוב מעומעם, נטרלי */
+.permit.permit-none {
+  background: #f8fafc;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.permit.permit-none p {
+  margin: 0;
+}
+
 .recall {
   margin-top: 16px;
   padding: 12px 14px;
@@ -393,6 +416,24 @@ body {
 .recall p {
   margin: 6px 0 0;
   font-size: 0.85rem;
+}
+
+/* אין ריקולים פתוחים — חיווי חיובי ירוק */
+.recall.recall-ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+/* בדיקת הריקולים נכשלה — מעומעם, לא אזהרה ולא "אין" */
+.recall.recall-unavailable {
+  background: #f8fafc;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.recall.recall-unavailable p {
+  margin: 0;
 }
 
 .recall .recall-fix {
