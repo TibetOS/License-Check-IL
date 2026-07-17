@@ -189,13 +189,21 @@ async function ckanSearch(resourceId, filters, limit = 1) {
     filters: JSON.stringify(filters),
     limit: String(limit),
   });
-  const response = await fetch(`${API_URL}?${params}`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  if (!data?.success) throw new Error("CKAN request failed");
-  return data?.result?.records || [];
+  // AbortController + setTimeout במקום AbortSignal.timeout() כדי לתמוך גם
+  // בדפדפנים ישנים יותר (לפני ~2022). ה-timer מבוטל תמיד ב-finally.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_URL}?${params}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (!data?.success) throw new Error("CKAN request failed");
+    return data?.result?.records || [];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /* ---------- הצגת תוצאות ---------- */
@@ -219,6 +227,7 @@ function clearMessage() {
 function hideResult() {
   resultCard.classList.add("hidden");
   resultBanner.classList.add("hidden");
+  resultDetails.replaceChildren();
   for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
@@ -757,7 +766,7 @@ function websiteHref(raw) {
 function fillRecallDetails(details) {
   for (const detail of details) {
     if (detail?.RECALL_ID == null) continue;
-    const fix = recallBox.querySelector(`p[data-recall-id="${detail.RECALL_ID}"]`);
+    const fix = recallBox.querySelector(`p[data-recall-id="${CSS.escape(String(detail.RECALL_ID))}"]`);
     if (!fix) continue;
 
     const parts = [];
