@@ -23,6 +23,7 @@ const RESOURCES = {
   safetyDiscount: "83bfb278-7be1-4dab-ae2d-40125a923da1",
   particleFilter: "7cb2bd95-bf2e-49b6-aea1-fcb5ff6f0473",
   cargoAnchors: "786b33b5-75c4-42a3-a241-b1af3c9ca487",
+  constructionEquipment: "58dc4654-16b1-42ed-8170-98fadec153ea",
 };
 
 const RECENT_KEY = "lci_recent_v1";
@@ -121,6 +122,12 @@ function withUnit(value, unit) {
 function positiveNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+// דגל אבזור (0/1) בטבלת הדגמים — מציגים "כן" רק כשהאבזור קיים.
+// היעדר אינו מוצג כ"אין": ייתכן שהאבזור פשוט לא תועד בטבלת הדגם
+function yesOnly(value) {
+  return Number(value) === 1 ? "כן" : null;
 }
 
 /* קודי עומס ומהירות של צמיגים (תקן ETRTO): 88H -> 560 ק"ג, עד 210 קמ"ש */
@@ -274,8 +281,8 @@ function renderCard({ plateDigits, title, banner, rows }) {
 }
 
 function vehicleTitle(record) {
-  const manufacturer = record.tozeret_nm || "";
-  const model = record.kinuy_mishari || record.degem_nm || "";
+  const manufacturer = record.tozeret_nm || record.shilda_totzar_en_nm || "";
+  const model = record.kinuy_mishari || record.degem_nm || record.sug_tzama_nm || "";
   return [manufacturer, model].filter(Boolean).join(" ");
 }
 
@@ -427,6 +434,29 @@ function cancelledBanner(record) {
   };
 }
 
+// כלי צמ"ה (ציוד מכני הנדסי) — מלגזות, מנופים, טרקטורים. מאגר נפרד
+// עם מפתח משלו (mispar_tzama) ושדות ייחודיים (כושר הרמה, מגבלות)
+function constructionEquipmentRows(record) {
+  const restrictions = [record.hagbala_nm_1, record.hagbala_nm_2, record.hagbala_nm_3, record.hagbala_nm_4]
+    .map((x) => (x || "").trim())
+    .filter(Boolean)
+    .join(", ");
+  return [
+    ["סוג כלי", record.sug_tzama_nm],
+    ["יצרן", record.shilda_totzar_en_nm, { skip: true, ltr: true }],
+    ["דגם", record.degem_nm, { skip: true, ltr: true }],
+    ["שנת ייצור", record.shnat_yitzur],
+    ["הנעה", record.hanaa_nm, { skip: true }],
+    ["הספק", withUnit(positiveNumber(record.koah_sus), 'כ"ס'), { skip: true }],
+    ["כושר הרמה", withUnit(positiveNumber(record.kosher_harama_ton), "טון"), { skip: true }],
+    ["משקל עצמי", withUnit(positiveNumber(record.mishkal_ton), "טון"), { skip: true }],
+    ["משקל כולל", withUnit(positiveNumber(record.mishkal_kolel_ton), "טון"), { skip: true }],
+    ["מספר שלדה", record.mispar_shilda, { skip: true, ltr: true }],
+    ["תאריך רישום", formatDate(record.rishum_date), { skip: true }],
+    ["מגבלות", restrictions, { skip: true }],
+  ];
+}
+
 // מאגרי ארכיון הביטולים שומרים את מספר הרכב כטקסט עם אפסים מובילים
 // (למשל "04252235") — סינון מספרי נכשל שם, חובה מחרוזת בת 8 תווים
 function paddedPlateFilters(digits) {
@@ -515,6 +545,20 @@ const FALLBACK_CHAIN = [
     },
     rows: inactiveOldRows,
     enrich: { recalls: true },
+  },
+  {
+    // מפתח שונה (mispar_tzama) ומרחב מספור נפרד — לכן אין להריץ העשרות
+    // לפי mispar_rechev (ריקול / תו חניה / היסטוריה), כדי לא להצליב בטעות
+    // עם רכב אחר שמספר הרישוי שלו זהה
+    resourceId: RESOURCES.constructionEquipment,
+    filters: (digits) => ({ mispar_tzama: parseInt(digits, 10) }),
+    banner: {
+      tone: "info",
+      title: 'כלי צמ"ה',
+      subtitle: 'הרכב מופיע במאגר כלי הצמ"ה (ציוד מכני הנדסי — מלגזות, מנופים, טרקטורים)',
+    },
+    rows: constructionEquipmentRows,
+    enrich: { plateKeyed: false },
   },
 ];
 
@@ -821,6 +865,10 @@ const WLTP_ROWS = [
   ["מרכב", (m) => m.merkav],
   ["מספר מושבים", (m) => m.mispar_moshavim],
   ["מספר דלתות", (m) => m.mispar_dlatot],
+  ["ארץ תוצרת", (m) => m.tozeret_eretz_nm],
+  ["מיזוג אוויר", (m) => yesOnly(m.mazgan_ind)],
+  ["גג נפתח", (m) => yesOnly(m.halon_bagg_ind)],
+  ["חישוקי סגסוגת", (m) => yesOnly(m.galgaley_sagsoget_kala_ind)],
   ["נפח מנוע", (m) => withUnit(m.nefah_manoa, 'סמ"ק')],
   ["משקל כולל", (m) => withUnit(m.mishkal_kolel, 'ק"ג')],
   ["כריות אוויר", (m) => m.mispar_kariot_avir],
@@ -873,46 +921,9 @@ function modelJoinFilters(record) {
   return filters;
 }
 
-function startEnrichments(record, plateNumber, options, token) {
-  const guard = (fn) => (value) => {
-    if (token === searchToken) fn(value);
-  };
-  const ignore = () => {};
-
-  const joinFilters = modelJoinFilters(record);
-  const wantWltp = options.wltp && joinFilters;
-  const wantPrice = options.priceList && joinFilters;
-
-  if (options.continuation) addPlaceholderRows("continuation", CONTINUATION_ROWS);
-  if (wantWltp) addPlaceholderRows("wltp", WLTP_ROWS);
-  if (wantPrice) addPlaceholderRows("price", PRICE_ROWS);
-
-  if (options.continuation) {
-    ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
-      .then(guard((records) => {
-        if (records[0]) fillPlaceholderRows("continuation", CONTINUATION_ROWS, records[0]);
-      }))
-      .catch(ignore);
-  }
-
-  if (wantWltp) {
-    ckanSearch(RESOURCES.wltp, joinFilters)
-      .then(guard((records) => {
-        if (!records[0]) return;
-        fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
-        renderSafetyEquipment(records[0]);
-      }))
-      .catch(ignore);
-  }
-
-  if (wantPrice) {
-    ckanSearch(RESOURCES.priceList, joinFilters)
-      .then(guard((records) => {
-        if (records[0]) fillPlaceholderRows("price", PRICE_ROWS, records[0]);
-      }))
-      .catch(ignore);
-  }
-
+// העשרות שנשלפות לפי mispar_rechev בלבד. מופרד כדי שנוכל לדלג עליו
+// עבור מאגרים עם מפתח אחר (כלי צמ"ה) בלי לסכן הצלבה שגויה עם רכב אחר
+function startPlateKeyedEnrichments(plateNumber, guard, ignore) {
   // היסטוריית רכב והחלפות בעלות — הכיסוי חלקי (בעיקר רכבים חדשים),
   // לכן הסעיף מוצג רק כשיש נתונים ולעולם לא עם "—".
   // שורת "לא נמצאו נתונים" מוצגת רק כששתי הבקשות חזרו ריקות בהצלחה;
@@ -955,6 +966,54 @@ function startEnrichments(record, plateNumber, options, token) {
       else renderPermitNone();
     }))
     .catch(ignore);
+}
+
+function startEnrichments(record, plateNumber, options, token) {
+  const guard = (fn) => (value) => {
+    if (token === searchToken) fn(value);
+  };
+  const ignore = () => {};
+  // כלי צמ"ה מגיע עם plateKeyed=false — מספרו (mispar_tzama) אינו מספר רישוי
+  const plateKeyed = options.plateKeyed !== false;
+
+  const joinFilters = modelJoinFilters(record);
+  const wantWltp = options.wltp && joinFilters;
+  const wantPrice = options.priceList && joinFilters;
+
+  if (options.continuation) addPlaceholderRows("continuation", CONTINUATION_ROWS);
+  if (wantWltp) addPlaceholderRows("wltp", WLTP_ROWS);
+  if (wantPrice) addPlaceholderRows("price", PRICE_ROWS);
+
+  if (options.continuation) {
+    ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
+      .then(guard((records) => {
+        if (records[0]) fillPlaceholderRows("continuation", CONTINUATION_ROWS, records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  if (wantWltp) {
+    ckanSearch(RESOURCES.wltp, joinFilters)
+      .then(guard((records) => {
+        if (!records[0]) return;
+        fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
+        renderSafetyEquipment(records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  if (wantPrice) {
+    ckanSearch(RESOURCES.priceList, joinFilters)
+      .then(guard((records) => {
+        if (records[0]) fillPlaceholderRows("price", PRICE_ROWS, records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  // העשרות לפי מספר רישוי (היסטוריה, חיווים נקודתיים, תו חניה) — רק כאשר
+  // המפתח הוא mispar_rechev אמיתי; עבור כלי צמ"ה מדולג כדי לא להצליב בטעות
+  // עם רכב שמספרו זהה
+  if (plateKeyed) startPlateKeyedEnrichments(plateNumber, guard, ignore);
 
   if (options.recalls) {
     // שימו לב: שמות השדות במאגר הריקולים באותיות גדולות.
