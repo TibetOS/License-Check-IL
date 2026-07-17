@@ -219,6 +219,7 @@ function clearMessage() {
 function hideResult() {
   resultCard.classList.add("hidden");
   resultBanner.classList.add("hidden");
+  resultDetails.replaceChildren();
   for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
@@ -757,7 +758,7 @@ function websiteHref(raw) {
 function fillRecallDetails(details) {
   for (const detail of details) {
     if (detail?.RECALL_ID == null) continue;
-    const fix = recallBox.querySelector(`p[data-recall-id="${detail.RECALL_ID}"]`);
+    const fix = recallBox.querySelector(`p[data-recall-id="${CSS.escape(String(detail.RECALL_ID))}"]`);
     if (!fix) continue;
 
     const parts = [];
