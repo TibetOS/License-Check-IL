@@ -189,32 +189,31 @@ async function ckanSearch(resourceId, filters, limit = 1) {
     filters: JSON.stringify(filters),
     limit: String(limit),
   });
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${API_URL}?${params}`, { signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    if (!data?.success) throw new Error("CKAN request failed");
-    return data?.result?.records || [];
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await fetch(`${API_URL}?${params}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  if (!data?.success) throw new Error("CKAN request failed");
+  return data?.result?.records || [];
 }
 
 /* ---------- הצגת תוצאות ---------- */
 
+// יצירת אלמנט בשורה אחת — כל התוכן מוזן דרך textContent (בטוח מ-XSS)
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
 function showMessage(text, type) {
-  statusEl.innerHTML = "";
-  const p = document.createElement("p");
-  p.className = `message ${type}`;
-  p.textContent = text;
-  statusEl.appendChild(p);
+  statusEl.replaceChildren(el("p", `message ${type}`, text));
 }
 
 function clearMessage() {
-  statusEl.innerHTML = "";
+  statusEl.replaceChildren();
 }
 
 function hideResult() {
@@ -222,27 +221,22 @@ function hideResult() {
   resultBanner.classList.add("hidden");
   for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
-    box.innerHTML = "";
+    box.replaceChildren();
   }
   recallBox.classList.remove("recall-ok", "recall-unavailable");
   permitBox.classList.remove("permit-none");
 }
 
 function setBanner(banner) {
+  resultBanner.replaceChildren();
   if (!banner) {
     resultBanner.classList.add("hidden");
-    resultBanner.innerHTML = "";
     return;
   }
-  resultBanner.innerHTML = "";
   resultBanner.className = `banner banner-${banner.tone}`;
-  const strong = document.createElement("strong");
-  strong.textContent = banner.title;
-  resultBanner.appendChild(strong);
+  resultBanner.appendChild(el("strong", null, banner.title));
   if (banner.subtitle) {
-    const span = document.createElement("span");
-    span.textContent = banner.subtitle;
-    resultBanner.appendChild(span);
+    resultBanner.appendChild(el("span", null, banner.subtitle));
   }
 }
 
@@ -251,26 +245,19 @@ function setBanner(banner) {
 function appendDetailRow(label, value, opts = {}) {
   const empty = value == null || value === "";
   if (opts.skip && empty) return;
-  const dt = document.createElement("dt");
-  dt.textContent = label;
-  const dd = document.createElement("dd");
-  dd.textContent = empty ? "—" : String(value);
+  const dd = el("dd", null, empty ? "—" : String(value));
   if (opts.ltr && !empty) dd.dir = "ltr";
   if (opts.badge && !empty) {
-    const badge = document.createElement("span");
-    badge.className = `badge badge-${opts.badge.tone}`;
-    badge.textContent = opts.badge.text;
-    dd.appendChild(badge);
+    dd.appendChild(el("span", `badge badge-${opts.badge.tone}`, opts.badge.text));
   }
-  resultDetails.appendChild(dt);
-  resultDetails.appendChild(dd);
+  resultDetails.append(el("dt", null, label), dd);
 }
 
 function renderCard({ plateDigits, title, banner, rows }) {
   resultPlate.textContent = formatPlate(plateDigits);
   resultTitle.textContent = title;
   setBanner(banner);
-  resultDetails.innerHTML = "";
+  resultDetails.replaceChildren();
   for (const [label, value, opts] of rows) {
     appendDetailRow(label, value, opts);
   }
@@ -553,17 +540,11 @@ const SAFETY_FLAGS = [
 function renderSafetyEquipment(model) {
   const installed = SAFETY_FLAGS.filter(([field]) => Number(model[field]) === 1);
   if (!installed.length) return;
-  safetyBox.innerHTML = "";
-  const title = document.createElement("strong");
-  title.textContent = "מערכות בטיחות מותקנות";
-  safetyBox.appendChild(title);
-  const list = document.createElement("ul");
+  const list = el("ul");
   for (const [, label] of installed) {
-    const li = document.createElement("li");
-    li.textContent = `✓ ${label}`;
-    list.appendChild(li);
+    list.appendChild(el("li", null, `✓ ${label}`));
   }
-  safetyBox.appendChild(list);
+  safetyBox.replaceChildren(el("strong", null, "מערכות בטיחות מותקנות"), list);
   safetyBox.classList.remove("hidden");
 }
 
@@ -580,14 +561,10 @@ const HISTORY_FLAGS = [
 // שלד הסעיף נבנה מראש עם משבצות מוסתרות בסדר קבוע — שתי הבקשות
 // (רשומת היסטוריה והחלפות בעלות) ממלאות כל אחת את המשבצת שלה
 function prepareHistoryBox() {
-  historyBox.innerHTML = "";
+  historyBox.replaceChildren(el("strong", null, "היסטוריית הרכב"));
   historyBox.classList.add("hidden");
-  const title = document.createElement("strong");
-  title.textContent = "היסטוריית הרכב";
-  historyBox.appendChild(title);
   for (const key of ["km", "facts", "flags", "owners", "nodata"]) {
-    const slot = document.createElement("div");
-    slot.className = `history-slot history-${key}`;
+    const slot = el("div", `history-slot history-${key}`);
     slot.dataset.history = key;
     slot.hidden = true;
     historyBox.appendChild(slot);
@@ -605,14 +582,10 @@ function showHistorySlot(key) {
 function renderVehicleHistory(record) {
   const km = formatKm(record.kilometer_test_aharon);
   if (km) {
-    const slot = showHistorySlot("km");
-    const label = document.createElement("span");
-    label.className = "history-km-label";
-    label.textContent = "מד אוץ בטסט האחרון";
-    const value = document.createElement("span");
-    value.className = "history-km-value";
-    value.textContent = `${km} ק"מ`;
-    slot.append(label, value);
+    showHistorySlot("km").append(
+      el("span", "history-km-label", "מד אוץ בטסט האחרון"),
+      el("span", "history-km-value", `${km} ק"מ`),
+    );
   }
 
   const facts = [
@@ -621,28 +594,20 @@ function renderVehicleHistory(record) {
     ["מספר מנוע", record.mispar_manoa, { ltr: true }],
   ].filter(([, value]) => value != null && value !== "");
   if (facts.length) {
-    const slot = showHistorySlot("facts");
-    const dl = document.createElement("dl");
-    dl.className = "details";
+    const dl = el("dl", "details");
     for (const [label, value, opts] of facts) {
-      const dt = document.createElement("dt");
-      dt.textContent = label;
-      const dd = document.createElement("dd");
-      dd.textContent = String(value);
+      const dd = el("dd", null, String(value));
       if (opts?.ltr) dd.dir = "ltr";
-      dl.append(dt, dd);
+      dl.append(el("dt", null, label), dd);
     }
-    slot.appendChild(dl);
+    showHistorySlot("facts").appendChild(dl);
   }
 
   const flags = HISTORY_FLAGS.filter(([field]) => Number(record[field]) === 1);
   if (flags.length) {
     const slot = showHistorySlot("flags");
     for (const [, label] of flags) {
-      const chip = document.createElement("span");
-      chip.className = "chip chip-warn";
-      chip.textContent = `⚠️ ${label}`;
-      slot.appendChild(chip);
+      slot.appendChild(el("span", "chip chip-warn", `⚠️ ${label}`));
     }
   }
 }
@@ -650,36 +615,25 @@ function renderVehicleHistory(record) {
 // מוצג רק כששתי בקשות ההיסטוריה חזרו ריקות בהצלחה — היעדר נתונים במאגר
 // חלקי אינו "אין היסטוריה", ולכן הנוסח מדגיש את מגבלת הכיסוי
 function renderHistoryNoData() {
-  const slot = showHistorySlot("nodata");
-  const p = document.createElement("p");
-  p.textContent = "לא נמצאו נתוני היסטוריה לרכב זה — המאגר חלקי ומכסה בעיקר רכבים חדשים";
-  slot.appendChild(p);
+  showHistorySlot("nodata").appendChild(
+    el("p", null, "לא נמצאו נתוני היסטוריה לרכב זה — המאגר חלקי ומכסה בעיקר רכבים חדשים"),
+  );
 }
 
 function renderOwnershipHistory(records) {
   if (!records.length) return;
   const sorted = [...records].sort((a, b) => Number(a.baalut_dt) - Number(b.baalut_dt));
-  const slot = showHistorySlot("owners");
 
-  const head = document.createElement("div");
-  head.className = "history-owners-head";
-  const label = document.createElement("span");
-  label.textContent = "החלפות בעלות";
-  const badge = document.createElement("span");
-  badge.className = "hand-badge";
-  badge.textContent = `יד ${sorted.length}`;
-  head.append(label, badge);
-  slot.appendChild(head);
+  const head = el("div", "history-owners-head");
+  head.append(el("span", null, "החלפות בעלות"), el("span", "hand-badge", `יד ${sorted.length}`));
 
-  const list = document.createElement("ol");
-  list.className = "history-owners-list";
+  const list = el("ol", "history-owners-list");
   for (const row of sorted) {
-    const li = document.createElement("li");
     const when = formatYearMonthInt(row.baalut_dt);
-    li.textContent = when ? `${when} — ${row.baalut || ""}` : String(row.baalut || "");
-    list.appendChild(li);
+    list.appendChild(el("li", null, when ? `${when} — ${row.baalut || ""}` : String(row.baalut || "")));
   }
-  slot.appendChild(list);
+
+  showHistorySlot("owners").append(head, list);
 }
 
 /* ---------- חיווים נקודתיים (בקשה אחת לכל מאגר, מוצג רק בהתאמה) ---------- */
@@ -709,11 +663,10 @@ const INDICATORS = [
 ];
 
 function prepareIndicatorBox() {
-  indicatorBox.innerHTML = "";
+  indicatorBox.replaceChildren();
   indicatorBox.classList.add("hidden");
   for (const indicator of INDICATORS) {
-    const chip = document.createElement("span");
-    chip.className = `chip chip-${indicator.tone}`;
+    const chip = el("span", `chip chip-${indicator.tone}`);
     chip.dataset.indicator = indicator.key;
     chip.hidden = true;
     indicatorBox.appendChild(chip);
@@ -730,19 +683,15 @@ function fillIndicator(key, text) {
 }
 
 function renderPermit(permit) {
-  permitBox.classList.remove("permit-none");
-  permitBox.innerHTML = "";
-  const title = document.createElement("strong");
-  title.textContent = "🅿 לרכב זה תו חניה לנכה";
-  permitBox.appendChild(title);
   const parts = [];
   if (permit["SUG TAV"] != null) parts.push(`סוג תו: ${permit["SUG TAV"]}`);
   const issued = formatIntDate(permit["TAARICH HAFAKAT TAG"]);
   if (issued) parts.push(`הונפק: ${issued}`);
+
+  permitBox.classList.remove("permit-none");
+  permitBox.replaceChildren(el("strong", null, "🅿 לרכב זה תו חניה לנכה"));
   if (parts.length) {
-    const p = document.createElement("p");
-    p.textContent = parts.join(" · ");
-    permitBox.appendChild(p);
+    permitBox.appendChild(el("p", null, parts.join(" · ")));
   }
   permitBox.classList.remove("hidden");
 }
@@ -750,32 +699,26 @@ function renderPermit(permit) {
 // מאגר תווי החניה מלא ומוסמך — תשובה ריקה (בהצלחה) פירושה שאין תו
 function renderPermitNone() {
   permitBox.classList.add("permit-none");
-  permitBox.innerHTML = "";
-  const p = document.createElement("p");
-  p.textContent = "אין תו חניה לנכה רשום לרכב זה";
-  permitBox.appendChild(p);
+  permitBox.replaceChildren(el("p", null, "אין תו חניה לנכה רשום לרכב זה"));
   permitBox.classList.remove("hidden");
 }
 
 function renderRecalls(recalls) {
   recallBox.classList.remove("recall-ok", "recall-unavailable");
-  recallBox.innerHTML = "";
-  const title = document.createElement("strong");
-  title.textContent =
+  recallBox.replaceChildren(el(
+    "strong",
+    null,
     recalls.length === 1
       ? "⚠️ קיימת קריאת ריקול פתוחה שטרם טופלה"
-      : `⚠️ קיימות ${recalls.length} קריאות ריקול פתוחות שטרם טופלו`;
-  recallBox.appendChild(title);
+      : `⚠️ קיימות ${recalls.length} קריאות ריקול פתוחות שטרם טופלו`,
+  ));
   for (const recall of recalls) {
-    const p = document.createElement("p");
     const details = [recall.SUG_TAKALA, recall.TEUR_TAKALA].filter(Boolean).join(": ");
     const opened = formatDate(recall.TAARICH_PTICHA);
-    p.textContent = opened ? `${details} (נפתחה ב-${opened})` : details;
-    recallBox.appendChild(p);
+    recallBox.appendChild(el("p", null, opened ? `${details} (נפתחה ב-${opened})` : details));
     // משבצת מוסתרת לפרטי התיקון של הריקול — תמולא כשמגיעה תשובת מאגר הפירוט
     if (recall.RECALL_ID != null) {
-      const fix = document.createElement("p");
-      fix.className = "recall-fix";
+      const fix = el("p", "recall-fix");
       fix.dataset.recallId = String(recall.RECALL_ID);
       fix.hidden = true;
       recallBox.appendChild(fix);
@@ -788,10 +731,7 @@ function renderRecalls(recalls) {
 function renderRecallsAllClear() {
   recallBox.classList.remove("recall-unavailable");
   recallBox.classList.add("recall-ok");
-  recallBox.innerHTML = "";
-  const strong = document.createElement("strong");
-  strong.textContent = "✅ אין קריאות ריקול פתוחות לרכב זה";
-  recallBox.appendChild(strong);
+  recallBox.replaceChildren(el("strong", null, "✅ אין קריאות ריקול פתוחות לרכב זה"));
   recallBox.classList.remove("hidden");
 }
 
@@ -800,10 +740,7 @@ function renderRecallsAllClear() {
 function renderRecallsUnavailable() {
   recallBox.classList.remove("recall-ok");
   recallBox.classList.add("recall-unavailable");
-  recallBox.innerHTML = "";
-  const p = document.createElement("p");
-  p.textContent = "לא ניתן היה לבדוק קריאות ריקול כעת";
-  recallBox.appendChild(p);
+  recallBox.replaceChildren(el("p", null, "לא ניתן היה לבדוק קריאות ריקול כעת"));
   recallBox.classList.remove("hidden");
 }
 
@@ -815,74 +752,103 @@ function websiteHref(raw) {
   return null;
 }
 
-// פרטי תיקון ממאגר הריקולים הכללי: יבואן, טלפון, אופן תיקון ואתר
+// פרטי תיקון ממאגר הריקולים הכללי: יבואן, טלפון, אופן תיקון ואתר.
+// כל פרט קיים נהפך לקטע, והקטעים מחוברים ב-" · "
 function fillRecallDetails(details) {
   for (const detail of details) {
     if (detail?.RECALL_ID == null) continue;
     const fix = recallBox.querySelector(`p[data-recall-id="${detail.RECALL_ID}"]`);
     if (!fix) continue;
-    fix.innerHTML = "";
-    let first = true;
-    const separator = () => {
-      if (!first) fix.appendChild(document.createTextNode(" · "));
-      first = false;
-    };
+
+    const parts = [];
     if (detail.OFEN_TIKUN) {
-      separator();
-      fix.appendChild(document.createTextNode(`אופן התיקון: ${detail.OFEN_TIKUN}`));
+      parts.push([`אופן התיקון: ${detail.OFEN_TIKUN}`]);
     }
     if (detail.YEVUAN_TEUR || detail.TELEPHONE) {
-      separator();
-      fix.appendChild(document.createTextNode("לתיאום תיקון: "));
-      if (detail.YEVUAN_TEUR) {
-        fix.appendChild(document.createTextNode(String(detail.YEVUAN_TEUR)));
-      }
-      if (detail.YEVUAN_TEUR && detail.TELEPHONE) {
-        fix.appendChild(document.createTextNode(", "));
-      }
+      const contact = ["לתיאום תיקון: "];
+      if (detail.YEVUAN_TEUR) contact.push(String(detail.YEVUAN_TEUR));
+      if (detail.YEVUAN_TEUR && detail.TELEPHONE) contact.push(", ");
       if (detail.TELEPHONE) {
-        const phone = document.createElement("span");
+        const phone = el("span", null, String(detail.TELEPHONE));
         phone.dir = "ltr";
-        phone.textContent = String(detail.TELEPHONE);
-        fix.appendChild(phone);
+        contact.push(phone);
       }
+      parts.push(contact);
     }
     const href = websiteHref(detail.WEBSITE);
     if (href) {
-      separator();
-      const link = document.createElement("a");
+      const link = el("a", null, "אתר היבואן");
       link.href = href;
       link.target = "_blank";
       link.rel = "noopener";
-      link.textContent = "אתר היבואן";
-      fix.appendChild(link);
+      parts.push([link]);
     }
-    if (fix.childNodes.length) fix.hidden = false;
+    if (!parts.length) continue;
+
+    fix.replaceChildren();
+    parts.forEach((nodes, i) => {
+      if (i) fix.append(" · ");
+      fix.append(...nodes);
+    });
+    fix.hidden = false;
   }
 }
 
-// שורות ההעשרה נוצרות מראש מוסתרות, בסדר קבוע, כדי שהתצוגה לא תשתנה
-// לפי סדר ההגעה של התשובות מהרשת
-function addPlaceholderRow(key, label) {
-  const dt = document.createElement("dt");
-  dt.textContent = label;
-  dt.hidden = true;
-  dt.dataset.enrich = key;
-  const dd = document.createElement("dd");
-  dd.hidden = true;
-  dd.dataset.enrich = key;
-  resultDetails.appendChild(dt);
-  resultDetails.appendChild(dd);
+/* ---------- שורות העשרה בכרטיס הפרטים ----------
+   כל קבוצה היא טבלת [תווית, שליפת-ערך] אחת: אותה טבלה משמשת גם ליצירת
+   שורות מקום-שמור מוסתרות (בסדר קבוע, לפני שהתשובות מגיעות) וגם למילוין.
+   שליפה שמחזירה null/ריק משאירה את השורה מוסתרת */
+
+const CONTINUATION_ROWS = [
+  ["וו גרירה", (record) => record.grira_nm],
+  ["דירוג צמיגים", tireRating],
+];
+
+const WLTP_ROWS = [
+  ["כוח סוס", (m) => withUnit(m.koah_sus, 'כ"ס')],
+  ["תיבת הילוכים", (m) => (m.automatic_ind == null ? null : Number(m.automatic_ind) === 1 ? "אוטומטית" : "ידנית")],
+  ["טכנולוגיית הנעה", (m) => m.technologiat_hanaa_nm],
+  ["הנעה", (m) => m.hanaa_nm],
+  ["מרכב", (m) => m.merkav],
+  ["מספר מושבים", (m) => m.mispar_moshavim],
+  ["מספר דלתות", (m) => m.mispar_dlatot],
+  ["נפח מנוע", (m) => withUnit(m.nefah_manoa, 'סמ"ק')],
+  ["משקל כולל", (m) => withUnit(m.mishkal_kolel, 'ק"ג')],
+  ["כריות אוויר", (m) => m.mispar_kariot_avir],
+  // 0 = אין אישור גרירה — אין טעם להציג
+  ["כושר גרירה", (m) => withUnit(positiveNumber(m.kosher_grira_im_blamim), 'ק"ג')],
+  ["פליטת CO₂", (m) => withUnit(m.CO2_WLTP ?? m.kamut_CO2, 'גר׳/ק"מ')],
+  ["מדד ירוק", (m) => m.madad_yarok],
+  ["קבוצת אגרת רישוי", (m) => m.kvuzat_agra_cd],
+  ["ניקוד בטיחות", (m) => m.nikud_betihut],
+  ["רמת אבזור בטיחותי", (m) => m.ramat_eivzur_betihuty],
+];
+
+const PRICE_ROWS = [
+  ["מחיר מחירון מקורי", (listing) => formatPrice(listing.mehir)],
+  ["יבואן", (listing) => listing.shem_yevuan],
+];
+
+function addPlaceholderRows(group, rowDefs) {
+  rowDefs.forEach(([label], index) => {
+    const dt = el("dt", null, label);
+    const dd = el("dd");
+    dt.hidden = dd.hidden = true;
+    dt.dataset.enrich = dd.dataset.enrich = `${group}-${index}`;
+    resultDetails.append(dt, dd);
+  });
 }
 
-function fillPlaceholderRow(key, value) {
-  if (value == null || value === "") return;
-  const dd = resultDetails.querySelector(`dd[data-enrich="${key}"]`);
-  const dt = resultDetails.querySelector(`dt[data-enrich="${key}"]`);
-  if (!dd || !dt) return;
-  dd.textContent = String(value);
-  dt.hidden = false;
-  dd.hidden = false;
+function fillPlaceholderRows(group, rowDefs, record) {
+  rowDefs.forEach(([, getValue], index) => {
+    const value = getValue(record);
+    if (value == null || value === "") return;
+    const dt = resultDetails.querySelector(`dt[data-enrich="${group}-${index}"]`);
+    const dd = resultDetails.querySelector(`dd[data-enrich="${group}-${index}"]`);
+    if (!dt || !dd) return;
+    dd.textContent = String(value);
+    dt.hidden = dd.hidden = false;
+  });
 }
 
 function modelJoinFilters(record) {
@@ -908,40 +874,14 @@ function startEnrichments(record, plateNumber, options, token) {
   const wantWltp = options.wltp && joinFilters;
   const wantPrice = options.priceList && joinFilters;
 
-  if (options.continuation) {
-    addPlaceholderRow("towHitch", "וו גרירה");
-    addPlaceholderRow("tireRating", "דירוג צמיגים");
-  }
-  if (wantWltp) {
-    addPlaceholderRow("horsePower", "כוח סוס");
-    addPlaceholderRow("gearbox", "תיבת הילוכים");
-    addPlaceholderRow("drivetrain", "טכנולוגיית הנעה");
-    addPlaceholderRow("hanaa", "הנעה");
-    addPlaceholderRow("body", "מרכב");
-    addPlaceholderRow("seats", "מספר מושבים");
-    addPlaceholderRow("doors", "מספר דלתות");
-    addPlaceholderRow("displacement", "נפח מנוע");
-    addPlaceholderRow("weight", "משקל כולל");
-    addPlaceholderRow("airbags", "כריות אוויר");
-    addPlaceholderRow("towing", "כושר גרירה");
-    addPlaceholderRow("co2", "פליטת CO₂");
-    addPlaceholderRow("green", "מדד ירוק");
-    addPlaceholderRow("agraGroup", "קבוצת אגרת רישוי");
-    addPlaceholderRow("safetyScore", "ניקוד בטיחות");
-    addPlaceholderRow("safetyLevel", "רמת אבזור בטיחותי");
-  }
-  if (wantPrice) {
-    addPlaceholderRow("listPrice", "מחיר מחירון מקורי");
-    addPlaceholderRow("importer", "יבואן");
-  }
+  if (options.continuation) addPlaceholderRows("continuation", CONTINUATION_ROWS);
+  if (wantWltp) addPlaceholderRows("wltp", WLTP_ROWS);
+  if (wantPrice) addPlaceholderRows("price", PRICE_ROWS);
 
   if (options.continuation) {
     ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
       .then(guard((records) => {
-        const extra = records[0];
-        if (!extra) return;
-        fillPlaceholderRow("towHitch", extra.grira_nm);
-        fillPlaceholderRow("tireRating", tireRating(extra));
+        if (records[0]) fillPlaceholderRows("continuation", CONTINUATION_ROWS, records[0]);
       }))
       .catch(ignore);
   }
@@ -949,30 +889,9 @@ function startEnrichments(record, plateNumber, options, token) {
   if (wantWltp) {
     ckanSearch(RESOURCES.wltp, joinFilters)
       .then(guard((records) => {
-        const model = records[0];
-        if (!model) return;
-        fillPlaceholderRow("horsePower", withUnit(model.koah_sus, 'כ"ס'));
-        if (model.automatic_ind != null) {
-          fillPlaceholderRow("gearbox", Number(model.automatic_ind) === 1 ? "אוטומטית" : "ידנית");
-        }
-        fillPlaceholderRow("drivetrain", model.technologiat_hanaa_nm);
-        fillPlaceholderRow("hanaa", model.hanaa_nm);
-        fillPlaceholderRow("body", model.merkav);
-        fillPlaceholderRow("seats", model.mispar_moshavim);
-        fillPlaceholderRow("doors", model.mispar_dlatot);
-        fillPlaceholderRow("displacement", withUnit(model.nefah_manoa, 'סמ"ק'));
-        fillPlaceholderRow("weight", withUnit(model.mishkal_kolel, 'ק"ג'));
-        fillPlaceholderRow("airbags", model.mispar_kariot_avir);
-        // 0 = אין אישור גרירה — אין טעם להציג
-        if (Number(model.kosher_grira_im_blamim) > 0) {
-          fillPlaceholderRow("towing", withUnit(model.kosher_grira_im_blamim, 'ק"ג'));
-        }
-        fillPlaceholderRow("co2", withUnit(model.CO2_WLTP ?? model.kamut_CO2, 'גר׳/ק"מ'));
-        fillPlaceholderRow("green", model.madad_yarok);
-        fillPlaceholderRow("agraGroup", model.kvuzat_agra_cd);
-        fillPlaceholderRow("safetyScore", model.nikud_betihut);
-        fillPlaceholderRow("safetyLevel", model.ramat_eivzur_betihuty);
-        renderSafetyEquipment(model);
+        if (!records[0]) return;
+        fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
+        renderSafetyEquipment(records[0]);
       }))
       .catch(ignore);
   }
@@ -980,10 +899,7 @@ function startEnrichments(record, plateNumber, options, token) {
   if (wantPrice) {
     ckanSearch(RESOURCES.priceList, joinFilters)
       .then(guard((records) => {
-        const listing = records[0];
-        if (!listing) return;
-        fillPlaceholderRow("listPrice", formatPrice(listing.mehir));
-        fillPlaceholderRow("importer", listing.shem_yevuan);
+        if (records[0]) fillPlaceholderRows("price", PRICE_ROWS, records[0]);
       }))
       .catch(ignore);
   }
@@ -1081,36 +997,25 @@ function addRecent(plateDigits, label) {
 
 function renderRecent() {
   const entries = loadRecent();
-  if (!entries.length) {
-    recentSection.classList.add("hidden");
-    recentList.innerHTML = "";
-    return;
-  }
-  recentList.innerHTML = "";
+  recentList.replaceChildren();
+  recentSection.classList.toggle("hidden", !entries.length);
   for (const entry of entries) {
-    const li = document.createElement("li");
-    const button = document.createElement("button");
+    const button = el("button", "recent-chip");
     button.type = "button";
-    button.className = "recent-chip";
-    const plate = document.createElement("span");
-    plate.className = "recent-plate";
+    const plate = el("span", "recent-plate", formatPlate(entry.p));
     plate.dir = "ltr";
-    plate.textContent = formatPlate(entry.p);
     button.appendChild(plate);
     if (entry.l) {
-      const label = document.createElement("span");
-      label.className = "recent-label";
-      label.textContent = entry.l;
-      button.appendChild(label);
+      button.appendChild(el("span", "recent-label", entry.l));
     }
     button.addEventListener("click", () => {
       input.value = formatPlate(entry.p);
       runSearch(entry.p);
     });
+    const li = el("li");
     li.appendChild(button);
     recentList.appendChild(li);
   }
-  recentSection.classList.remove("hidden");
 }
 
 clearRecentBtn.addEventListener("click", () => {
@@ -1156,10 +1061,12 @@ async function runSearch(digits) {
     );
     if (token !== searchToken) return;
 
-    for (let i = 0; i < FALLBACK_CHAIN.length; i++) {
-      if (results[i].status !== "fulfilled" || !results[i].value.length) continue;
-      const fallback = FALLBACK_CHAIN[i];
-      const record = results[i].value[0];
+    const hitIndex = results.findIndex(
+      (result) => result.status === "fulfilled" && result.value.length
+    );
+    if (hitIndex !== -1) {
+      const fallback = FALLBACK_CHAIN[hitIndex];
+      const record = results[hitIndex].value[0];
       clearMessage();
       renderCard({
         plateDigits: digits,
