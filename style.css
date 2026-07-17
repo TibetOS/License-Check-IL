@@ -243,6 +243,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.history-km-sub {
+  color: #3b82f6;
+  font-size: 0.8rem;
+}
+
 .history .details dt {
   font-size: 0.85rem;
 }

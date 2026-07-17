@@ -66,9 +66,11 @@ and commercial vehicles up to 3,500 kg from 1998+.
 | Inactive vehicles (no model code) | `6f6acd03-f351-4a8f-8ecf-df792f4f573a` | 1,436,483 | Older/partial records, different schema |
 | Motorcycles (two-wheelers) | `bf9df4e2-d90d-4c0a-a400-19e15af8e95f` | 189,742 | Own schema: `nefach_manoa`, `hespek`, ownership, no color/test fields |
 | Public transport vehicles | `cf29862d-ca25-4691-84f6-1be60dcb4a1e` | 65,864 | Buses/taxis; includes cancellation fields |
+| Bus fleet | `91d298ed-a260-4f93-9d50-d5e3c5b82ce1` | 15,409 | ⚠️ Keyed by **`bus_license_id`** (= the plate), not `mispar_rechev`. Rich per-bus data absent from the public-transport registry: `operator_nm` (אגד/דן/…), **`total_kilometer`** (odometer), `PropulsionType_nm` (diesel/electric), `BusType_nm` (urban/intercity), `SeatsNum`, `stone_proof_nm`/`bullet_proof_nm` (armour), `cluster_nm`. Joins to a public-transport hit by plate |
 | Personal-import vehicles | `03adc637-b6fe-402b-9937-7c3d3afc9140` | 27,481 | Includes `sug_yevu`, test + validity dates |
 | Heavy vehicles >3.5t | `cd3acc5c-03c3-4c89-9c54-d40f93c0d790` | 419,271 | Trucks + vintage/collector vehicles absent from the main registry. Schema like inactive-no-degem plus `grira_nm`, `hanaa_nm`, weights, tire sizes, seats. ⚠️ Contains historic plates with **fewer than 7 digits** (e.g. `870`, a 1955 Chevrolet) — the app's validation was relaxed to 2–8 digits because of this |
 | Construction equipment (צמ"ה) | `58dc4654-16b1-42ed-8170-98fadec153ea` | — | Forklifts, cranes, tractors, excavators. ⚠️ Keyed by **`mispar_tzama`, not `mispar_rechev`** — a separate, short numbering space that overlaps old vehicle plates, so it's queried **last** in the fallback chain and its enrichments (recalls/permit/history, all `mispar_rechev`-keyed) are **skipped** to avoid false cross-matches. Own schema: `sug_tzama_nm` (type), `shilda_totzar_en_nm` (maker), `kosher_harama_ton` (lift capacity), `mishkal_kolel_ton`, `hagbala_nm_1..4` (restrictions), `rishum_date`/`tokef_date` as `YYYY-MM-DD HH:MM:SS` |
+| צמ"ה air-pollution grade | `f2e130e8-bc94-4443-91bd-3ba3353b1494` | 178,414 | Keyed by `mispar_tzama` — joins to a צמ"ה hit. `yatzran` (maker), `power_engine_kilowalt`, `dargat_zihum_avir` (pollution grade, e.g. מזהם), `hutkan_mesanen_helkikim` (particle filter yes/no), **`murshe_peelut`** (authorised to operate — a real red flag when "לא מורשה פעילות") |
 | Final cancellation (scrapped) | `851ecab1-0622-4dbe-a6c7-f950cf82abf9` | 1,190,443 | Vehicles cancelled permanently. Rich schema: `bitul_dt`, `misgeret`, `tzeva_rechev`, `kinuy_mishari`, `ramat_gimur`, engine fields; `moed_aliya_lakvish` is a plain year int here. Verified test plate: `2910639` (Opel Astra 2016, in no other registry) |
 | Final cancellation archive 2010-2016 | `4e6b9724-4c1e-43f0-909a-154d4cc4e046` | — | Same columns as above, **but every value is text** — see the zero-padding quirk below |
 | Final cancellation archive 2000-2009 | `ec8cbc34-72e1-4b69-9c48-22821ba0bd6c` | — | Same as the 2010-2016 archive |
@@ -94,6 +96,22 @@ is at the ceiling of *new sources*; further enrichment comes from **fields we
 already fetch** — the WLTP model row alone carries 94 columns (comfort +
 dimensions + a ~20-flag ADAS inventory), of which the app now surfaces the
 high-value subset.
+
+## Derived signals (computed, not fetched)
+
+Beyond raw fields, a few high-value signals are *computed*:
+
+- **Model popularity/rarity** — `datastore_search` with `limit=0&include_total=true`
+  filtered by `tozeret_cd`+`degem_cd` (and optionally `shnat_yitzur`) returns the
+  count of that model in the active registry ("how many on the road"). A filtered
+  total over 4.15M rows takes ~3-4s, so it's fired as a lazy background fill.
+- **Average annual mileage** — `kilometer_test_aharon` ÷ years since
+  `rishum_rishon_dt` (both from the vehicle-history record). An estimate (the
+  odometer is as-of-last-test, not today), labelled `~`; skipped for vehicles
+  under 6 months old.
+- **Motorcycle licence class** — estimated from `nefach_manoa`+`hespek`:
+  A1 (≤125cc & ≤14.6 hp), A2 (≤47 hp), A (above). `hespek` is present on ~90%
+  of two-wheelers; where absent, only a coarse class is shown.
 
 ## Vehicle history (dataset `shinui_mivne`, updated daily)
 
