@@ -167,6 +167,77 @@ body {
   border: 1px solid #bfdbfe;
 }
 
+.badge {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.badge-valid {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.badge-expired {
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid #fecaca;
+}
+
+.safety {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 0.9rem;
+}
+
+.safety.hidden {
+  display: none;
+}
+
+.safety ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 380px) {
+  .safety ul {
+    grid-template-columns: 1fr;
+  }
+}
+
+.permit {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  font-size: 0.9rem;
+}
+
+.permit.hidden {
+  display: none;
+}
+
+.permit p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+}
+
 .recall {
   margin-top: 16px;
   padding: 12px 14px;

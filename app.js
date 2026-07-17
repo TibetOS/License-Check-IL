@@ -6,9 +6,12 @@ const RESOURCES = {
   continuation: "0866573c-40cd-4ca8-91d2-9dd2d7a492e5",
   wltp: "142afde2-6228-49f9-8a29-9b6c3a0cbe40",
   recalls: "36bf1404-0be4-49d2-82dc-2f1ead4a8b93",
+  priceList: "39f455bf-6db0-4926-859d-017f34eacbcb",
+  disabledPermit: "c8b9f9c8-4612-4068-934f-d4acd2e3c06e",
   inactive: "f6efe89a-fb3d-43a4-bb61-9bf12a9b9099",
   motorcycles: "bf9df4e2-d90d-4c0a-a400-19e15af8e95f",
   personalImport: "03adc637-b6fe-402b-9937-7c3d3afc9140",
+  publicTransport: "cf29862d-ca25-4691-84f6-1be60dcb4a1e",
   inactiveOld: "6f6acd03-f351-4a8f-8ecf-df792f4f573a",
 };
 
@@ -24,6 +27,8 @@ const resultBanner = document.getElementById("result-banner");
 const resultPlate = document.getElementById("result-plate");
 const resultTitle = document.getElementById("result-title");
 const resultDetails = document.getElementById("result-details");
+const safetyBox = document.getElementById("safety-box");
+const permitBox = document.getElementById("permit-box");
 const recallBox = document.getElementById("recall-box");
 const recentSection = document.getElementById("recent");
 const recentList = document.getElementById("recent-list");
@@ -66,6 +71,13 @@ function formatDate(value) {
   return `${match[3]}.${match[2]}.${match[1]}`;
 }
 
+// תאריך כמספר שלם בסגנון 20230419 (מאגר תווי החניה)
+function formatIntDate(value) {
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec(String(value));
+  if (!match) return null;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+}
+
 // "2011-6" -> "6/2011"
 function formatMonthYear(value) {
   if (!value) return null;
@@ -76,6 +88,25 @@ function formatMonthYear(value) {
 
 function withUnit(value, unit) {
   return value != null && value !== "" ? `${value} ${unit}` : null;
+}
+
+function formatPrice(value) {
+  if (value == null || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return `₪${num.toLocaleString("he-IL")}`;
+}
+
+// תג "בתוקף" / "פג תוקף" לפי תאריך ISO
+function validityBadge(isoDate) {
+  if (!isoDate) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate));
+  if (!match) return null;
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return match[0] >= todayIso
+    ? { text: "בתוקף", tone: "valid" }
+    : { text: "פג תוקף", tone: "expired" };
 }
 
 async function ckanSearch(resourceId, filters, limit = 1) {
@@ -115,8 +146,10 @@ function clearMessage() {
 function hideResult() {
   resultCard.classList.add("hidden");
   resultBanner.classList.add("hidden");
-  recallBox.classList.add("hidden");
-  recallBox.innerHTML = "";
+  for (const box of [safetyBox, permitBox, recallBox]) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+  }
 }
 
 function setBanner(banner) {
@@ -137,11 +170,22 @@ function setBanner(banner) {
   }
 }
 
-function appendDetailRow(label, value) {
+// opts: skip — לדלג על שורה ריקה במקום להציג "—"; ltr — ערך טכני (VIN וכד');
+// badge — תג {text, tone} שמוצג ליד הערך
+function appendDetailRow(label, value, opts = {}) {
+  const empty = value == null || value === "";
+  if (opts.skip && empty) return;
   const dt = document.createElement("dt");
   dt.textContent = label;
   const dd = document.createElement("dd");
-  dd.textContent = value != null && value !== "" ? String(value) : "—";
+  dd.textContent = empty ? "—" : String(value);
+  if (opts.ltr && !empty) dd.dir = "ltr";
+  if (opts.badge && !empty) {
+    const badge = document.createElement("span");
+    badge.className = `badge badge-${opts.badge.tone}`;
+    badge.textContent = opts.badge.text;
+    dd.appendChild(badge);
+  }
   resultDetails.appendChild(dt);
   resultDetails.appendChild(dd);
 }
@@ -151,8 +195,8 @@ function renderCard({ plateDigits, title, banner, rows }) {
   resultTitle.textContent = title;
   setBanner(banner);
   resultDetails.innerHTML = "";
-  for (const [label, value] of rows) {
-    appendDetailRow(label, value);
+  for (const [label, value, opts] of rows) {
+    appendDetailRow(label, value, opts);
   }
   resultCard.classList.remove("hidden");
 }
@@ -163,19 +207,32 @@ function vehicleTitle(record) {
   return [manufacturer, model].filter(Boolean).join(" ");
 }
 
+function tireSizes(record) {
+  const front = record.zmig_kidmi || record.mida_zmig_kidmi;
+  const rear = record.zmig_ahori || record.mida_zmig_ahori;
+  if (!front && !rear) return null;
+  if (front && rear && front !== rear) return `${front} / ${rear}`;
+  return front || rear;
+}
+
 /* ---------- מאגרים: שורות תצוגה לכל סוג רשומה ---------- */
 
 function mainRegistryRows(record) {
   return [
     ["יצרן", record.tozeret_nm],
     ["דגם", record.kinuy_mishari || record.degem_nm],
+    ["רמת גימור", record.ramat_gimur, { skip: true }],
     ["שנת ייצור", record.shnat_yitzur],
     ["צבע", record.tzeva_rechev],
     ["סוג דלק", record.sug_delek_nm],
     ["בעלות", record.baalut],
+    ["מספר שלדה", record.misgeret, { skip: true, ltr: true }],
+    ["דגם מנוע", record.degem_manoa, { skip: true, ltr: true }],
+    ["קבוצת זיהום", record.kvutzat_zihum, { skip: true }],
+    ["מידת צמיגים", tireSizes(record), { skip: true, ltr: true }],
     ["עלה לכביש", formatMonthYear(record.moed_aliya_lakvish)],
     ["טסט אחרון", formatDate(record.mivchan_acharon_dt)],
-    ["תוקף רישיון רכב", formatDate(record.tokef_dt)],
+    ["תוקף רישיון רכב", formatDate(record.tokef_dt), { badge: validityBadge(record.tokef_dt) }],
   ];
 }
 
@@ -185,10 +242,13 @@ function motorcycleRows(record) {
     ["דגם", record.degem_nm],
     ["סוג רכב", record.sug_rechev_nm],
     ["שנת ייצור", record.shnat_yitzur],
+    ["ארץ ייצור", record.tozeret_eretz_nm, { skip: true }],
     ["נפח מנוע", withUnit(record.nefach_manoa, 'סמ"ק')],
     ["הספק", withUnit(record.hespek, 'כ"ס')],
     ["סוג דלק", record.sug_delek_nm],
     ["בעלות", record.baalut],
+    ["מספר שלדה", record.misgeret, { skip: true, ltr: true }],
+    ["מידת צמיגים", tireSizes(record), { skip: true, ltr: true }],
     ["עלה לכביש", formatMonthYear(record.moed_aliya_lakvish)],
   ];
 }
@@ -203,10 +263,31 @@ function personalImportRows(record) {
     ["ארץ ייצור", record.tozeret_eretz_nm],
     ["נפח מנוע", withUnit(record.nefach_manoa, 'סמ"ק')],
     ["סוג דלק", record.sug_delek_nm],
+    ["מספר שלדה", record.shilda, { skip: true, ltr: true }],
+    ["דגם מנוע", record.degem_manoa, { skip: true, ltr: true }],
+    ["משקל כולל", withUnit(record.mishkal_kolel, 'ק"ג'), { skip: true }],
     ["עלה לכביש", formatMonthYear(record.moed_aliya_lakvish)],
     ["טסט אחרון", formatDate(record.mivchan_acharon_dt)],
-    ["תוקף רישיון רכב", formatDate(record.tokef_dt)],
+    ["תוקף רישיון רכב", formatDate(record.tokef_dt), { badge: validityBadge(record.tokef_dt) }],
   ];
+}
+
+function publicTransportRows(record) {
+  const rows = [
+    ["יצרן", record.tozeret_nm],
+    ["דגם", record.kinuy_mishari || record.degem_nm],
+    ["סוג רכב", record.sug_rechev_nm],
+    ["שנת ייצור", record.shnat_yitzur],
+    ["צבע", record.tzeva_rechev, { skip: true }],
+    ["משקל כולל", withUnit(record.mishkal_kolel, 'ק"ג'), { skip: true }],
+    ["מספר מקומות", record.mispar_mekomot, { skip: true }],
+    ["תוקף רישיון רכב", formatDate(record.tokef_dt), { badge: validityBadge(record.tokef_dt) }],
+  ];
+  if (record.bitul_nm) {
+    const when = formatDate(record.bitul_dt);
+    rows.push(["סטטוס רישום", when ? `${record.bitul_nm} (${when})` : record.bitul_nm]);
+  }
+  return rows;
 }
 
 function inactiveOldRows(record) {
@@ -217,6 +298,8 @@ function inactiveOldRows(record) {
     ["ארץ ייצור", record.tozeret_eretz_nm],
     ["סוג דלק", record.sug_delek_nm],
     ["נפח מנוע", withUnit(record.nefach_manoa, 'סמ"ק')],
+    ["דגם מנוע", record.degem_manoa, { skip: true, ltr: true }],
+    ["מספר שלדה", record.mispar_shilda, { skip: true, ltr: true }],
     ["משקל כולל", withUnit(record.mishkal_kolel, 'ק"ג')],
   ];
 }
@@ -231,7 +314,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הלא פעילים של משרד התחבורה",
     },
     rows: mainRegistryRows,
-    enrich: { wltp: true, recalls: true },
+    enrich: { wltp: true, priceList: true, recalls: true },
   },
   {
     resourceId: RESOURCES.motorcycles,
@@ -254,6 +337,16 @@ const FALLBACK_CHAIN = [
     enrich: { recalls: true },
   },
   {
+    resourceId: RESOURCES.publicTransport,
+    banner: {
+      tone: "info",
+      title: "רכב ציבורי",
+      subtitle: "הרכב מופיע במאגר כלי הרכב הציבוריים (אוטובוסים ומוניות)",
+    },
+    rows: publicTransportRows,
+    enrich: { wltp: true, priceList: true, recalls: true },
+  },
+  {
     resourceId: RESOURCES.inactiveOld,
     banner: {
       tone: "warn",
@@ -266,6 +359,66 @@ const FALLBACK_CHAIN = [
 ];
 
 /* ---------- העשרות (בקשות מקבילות אחרי מציאת הרכב) ---------- */
+
+// דגלי מערכות הבטיחות בטבלת הדגמים (ערך 1 = מותקן)
+const SAFETY_FLAGS = [
+  ["maarechet_ezer_labalam_ind", "מערכת עזר לבלימה"],
+  ["blimat_hirum_lifnei_holhei_regel_ofanaim", "בלימת חירום מפני הולכי רגל ואופניים"],
+  ["zihuy_holchey_regel_ind", "זיהוי הולכי רגל"],
+  ["zihuy_rechev_do_galgali", "זיהוי רכב דו-גלגלי"],
+  ["bakarat_stiya_menativ_ind", "התרעת סטייה מנתיב"],
+  ["bakarat_stiya_activ_s", "בקרת סטייה מנתיב אקטיבית"],
+  ["nitur_merhak_milfanim_ind", "ניטור מרחק מלפנים"],
+  ["zihuy_matzav_hitkarvut_mesukenet_ind", "התרעת התקרבות מסוכנת"],
+  ["zihuy_beshetah_nistar_ind", "זיהוי רכב בשטח מת"],
+  ["hitnagshut_cad_shetah_met", "מניעת התנגשות בשטח מת"],
+  ["bakarat_shyut_adaptivit_ind", "בקרת שיוט אדפטיבית"],
+  ["zihuy_tamrurey_tnua_ind", "זיהוי תמרורי תנועה"],
+  ["bakarat_mehirut_isa", "בקרת מהירות חכמה (ISA)"],
+  ["blima_otomatit_nesia_leahor", "בלימה אוטומטית בנסיעה לאחור"],
+  ["matzlemat_reverse_ind", "מצלמת רוורס"],
+  ["bakarat_yatzivut_ind", "בקרת יציבות"],
+  ["abs_ind", "ABS"],
+  ["hayshaney_lahatz_avir_batzmigim_ind", "חיישני לחץ אוויר בצמיגים"],
+  ["hayshaney_hagorot_ind", "חיישני חגורות"],
+  ["teura_automatit_benesiya_kadima_ind", "תאורה אוטומטית בנסיעה קדימה"],
+  ["shlita_automatit_beorot_gvohim_ind", "אורות גבוהים אוטומטיים"],
+  ["alco_lock", "מנעול אלכוהול"],
+];
+
+function renderSafetyEquipment(model) {
+  const installed = SAFETY_FLAGS.filter(([field]) => Number(model[field]) === 1);
+  if (!installed.length) return;
+  safetyBox.innerHTML = "";
+  const title = document.createElement("strong");
+  title.textContent = "מערכות בטיחות מותקנות";
+  safetyBox.appendChild(title);
+  const list = document.createElement("ul");
+  for (const [, label] of installed) {
+    const li = document.createElement("li");
+    li.textContent = `✓ ${label}`;
+    list.appendChild(li);
+  }
+  safetyBox.appendChild(list);
+  safetyBox.classList.remove("hidden");
+}
+
+function renderPermit(permit) {
+  permitBox.innerHTML = "";
+  const title = document.createElement("strong");
+  title.textContent = "🅿 לרכב זה תו חניה לנכה";
+  permitBox.appendChild(title);
+  const parts = [];
+  if (permit["SUG TAV"] != null) parts.push(`סוג תו: ${permit["SUG TAV"]}`);
+  const issued = formatIntDate(permit["TAARICH HAFAKAT TAG"]);
+  if (issued) parts.push(`הונפק: ${issued}`);
+  if (parts.length) {
+    const p = document.createElement("p");
+    p.textContent = parts.join(" · ");
+    permitBox.appendChild(p);
+  }
+  permitBox.classList.remove("hidden");
+}
 
 function renderRecalls(recalls) {
   recallBox.innerHTML = "";
@@ -309,20 +462,49 @@ function fillPlaceholderRow(key, value) {
   dd.hidden = false;
 }
 
+function modelJoinFilters(record) {
+  if (record.tozeret_cd == null || record.degem_cd == null || record.shnat_yitzur == null) {
+    return null;
+  }
+  const filters = {
+    tozeret_cd: record.tozeret_cd,
+    degem_cd: record.degem_cd,
+    shnat_yitzur: record.shnat_yitzur,
+  };
+  if (record.sug_degem) filters.sug_degem = record.sug_degem;
+  return filters;
+}
+
 function startEnrichments(record, plateNumber, options, token) {
   const guard = (fn) => (value) => {
     if (token === searchToken) fn(value);
   };
   const ignore = () => {};
 
-  const wltpEligible =
-    options.wltp && record.tozeret_cd != null && record.degem_cd != null && record.shnat_yitzur != null;
+  const joinFilters = modelJoinFilters(record);
+  const wantWltp = options.wltp && joinFilters;
+  const wantPrice = options.priceList && joinFilters;
 
   if (options.towHitch) addPlaceholderRow("towHitch", "וו גרירה");
-  if (wltpEligible) {
+  if (wantWltp) {
     addPlaceholderRow("horsePower", "כוח סוס");
+    addPlaceholderRow("gearbox", "תיבת הילוכים");
+    addPlaceholderRow("drivetrain", "טכנולוגיית הנעה");
+    addPlaceholderRow("body", "מרכב");
+    addPlaceholderRow("seats", "מספר מושבים");
+    addPlaceholderRow("doors", "מספר דלתות");
+    addPlaceholderRow("displacement", "נפח מנוע");
+    addPlaceholderRow("weight", "משקל כולל");
+    addPlaceholderRow("airbags", "כריות אוויר");
+    addPlaceholderRow("towing", "כושר גרירה");
+    addPlaceholderRow("co2", "פליטת CO₂");
+    addPlaceholderRow("green", "מדד ירוק");
     addPlaceholderRow("safetyScore", "ניקוד בטיחות");
     addPlaceholderRow("safetyLevel", "רמת אבזור בטיחותי");
+  }
+  if (wantPrice) {
+    addPlaceholderRow("listPrice", "מחיר מחירון מקורי");
+    addPlaceholderRow("importer", "יבואן");
   }
 
   if (options.towHitch) {
@@ -333,23 +515,53 @@ function startEnrichments(record, plateNumber, options, token) {
       .catch(ignore);
   }
 
-  if (wltpEligible) {
-    const filters = {
-      tozeret_cd: record.tozeret_cd,
-      degem_cd: record.degem_cd,
-      shnat_yitzur: record.shnat_yitzur,
-    };
-    if (record.sug_degem) filters.sug_degem = record.sug_degem;
-    ckanSearch(RESOURCES.wltp, filters)
+  if (wantWltp) {
+    ckanSearch(RESOURCES.wltp, joinFilters)
       .then(guard((records) => {
         const model = records[0];
         if (!model) return;
         fillPlaceholderRow("horsePower", withUnit(model.koah_sus, 'כ"ס'));
+        if (model.automatic_ind != null) {
+          fillPlaceholderRow("gearbox", Number(model.automatic_ind) === 1 ? "אוטומטית" : "ידנית");
+        }
+        fillPlaceholderRow("drivetrain", model.technologiat_hanaa_nm);
+        fillPlaceholderRow("body", model.merkav);
+        fillPlaceholderRow("seats", model.mispar_moshavim);
+        fillPlaceholderRow("doors", model.mispar_dlatot);
+        fillPlaceholderRow("displacement", withUnit(model.nefah_manoa, 'סמ"ק'));
+        fillPlaceholderRow("weight", withUnit(model.mishkal_kolel, 'ק"ג'));
+        fillPlaceholderRow("airbags", model.mispar_kariot_avir);
+        // 0 = אין אישור גרירה — אין טעם להציג
+        if (Number(model.kosher_grira_im_blamim) > 0) {
+          fillPlaceholderRow("towing", withUnit(model.kosher_grira_im_blamim, 'ק"ג'));
+        }
+        fillPlaceholderRow("co2", withUnit(model.CO2_WLTP ?? model.kamut_CO2, 'גר׳/ק"מ'));
+        fillPlaceholderRow("green", model.madad_yarok);
         fillPlaceholderRow("safetyScore", model.nikud_betihut);
         fillPlaceholderRow("safetyLevel", model.ramat_eivzur_betihuty);
+        renderSafetyEquipment(model);
       }))
       .catch(ignore);
   }
+
+  if (wantPrice) {
+    ckanSearch(RESOURCES.priceList, joinFilters)
+      .then(guard((records) => {
+        const listing = records[0];
+        if (!listing) return;
+        fillPlaceholderRow("listPrice", formatPrice(listing.mehir));
+        fillPlaceholderRow("importer", listing.shem_yevuan);
+      }))
+      .catch(ignore);
+  }
+
+  // תו חניה לנכה נבדק לכל רכב שנמצא, בכל אחד מהמאגרים
+  // שימו לב: שמות השדות במאגר זה מכילים רווחים
+  ckanSearch(RESOURCES.disabledPermit, { "MISPAR RECHEV": plateNumber })
+    .then(guard((records) => {
+      if (records[0]) renderPermit(records[0]);
+    }))
+    .catch(ignore);
 
   if (options.recalls) {
     // שימו לב: שמות השדות במאגר הריקולים באותיות גדולות
@@ -451,7 +663,7 @@ async function runSearch(digits) {
         rows: mainRegistryRows(record),
       });
       addRecent(digits, vehicleTitle(record));
-      startEnrichments(record, plateNumber, { towHitch: true, wltp: true, recalls: true }, token);
+      startEnrichments(record, plateNumber, { towHitch: true, wltp: true, priceList: true, recalls: true }, token);
       return;
     }
 
