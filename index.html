@@ -17,6 +17,7 @@
 
     <form id="search-form" novalidate>
       <div class="plate-wrap">
+        <span class="plate-side" aria-hidden="true"></span>
         <input
           id="plate-input"
           type="text"
@@ -26,6 +27,9 @@
           aria-label="מספר לוחית רישוי"
           aria-describedby="input-hint"
         >
+        <button type="button" id="clear-input" class="clear-input" aria-label="ניקוי המספר" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6L18 18M18 6L6 18"/></svg>
+        </button>
       </div>
       <p id="input-hint" class="hint">7 או 8 ספרות, אפשר עם או בלי מקפים (לרכב ותיק גם מספר קצר יותר)</p>
       <button id="submit-btn" type="submit">בדיקה</button>

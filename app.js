@@ -33,6 +33,7 @@ const RECENT_MAX = 8;
 
 const form = document.getElementById("search-form");
 const input = document.getElementById("plate-input");
+const clearInputBtn = document.getElementById("clear-input");
 const submitBtn = document.getElementById("submit-btn");
 const statusEl = document.getElementById("status");
 const resultCard = document.getElementById("result");
@@ -1321,6 +1322,22 @@ input.addEventListener("input", () => {
     pos += 1;
   }
   input.setSelectionRange(pos, pos);
+});
+
+// מיקוד בשדה בוחר את כל המספר, כך שהקלדה מחליפה אותו מיד — הזנת מספר
+// חדש בלחיצה אחת ואז הקלדה. rAF כדי לרוץ אחרי מיקום הסמן של הדפדפן
+input.addEventListener("focus", () => {
+  requestAnimationFrame(() => {
+    if (document.activeElement === input && input.value) input.select();
+  });
+});
+
+// כפתור ✕ — ניקוי מיידי; preventDefault ב-mousedown שומר על המיקוד כדי
+// שהמקלדת בנייד לא תיסגר ותיפתח מחדש, וההקלדה החדשה מתחילה מיד
+clearInputBtn.addEventListener("mousedown", (event) => event.preventDefault());
+clearInputBtn.addEventListener("click", () => {
+  input.value = "";
+  input.focus();
 });
 
 form.addEventListener("submit", (event) => {

@@ -60,16 +60,32 @@ body {
 }
 
 .plate-wrap {
+  display: flex;
+  align-items: center;
   background: var(--plate-yellow);
   border: 2px solid #1a2233;
   border-radius: 8px;
   padding: 6px 10px;
+  transition: box-shadow 0.15s ease;
+}
+
+/* חיווי מיקוד עדין סביב הלוחית */
+.plate-wrap:focus-within {
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.35);
+}
+
+/* מרווח בצד ההפוך לכפתור, ברוחב זהה — שומר על הספרות ממורכזות בדיוק בכל רוחב */
+.plate-side {
+  flex: 0 0 34px;
 }
 
 #plate-input {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
   border: none;
   background: transparent;
+  padding: 0 4px;
   font-size: 1.8rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -80,8 +96,59 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* כפתור ניקוי — שומר על מקומו תמיד (מוסתר כשריק) כך שהופעתו לא מזיזה את הספרות */
+.clear-input {
+  flex: 0 0 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(26, 34, 51, 0.1);
+  color: #1a2233;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.6);
+  transition: opacity 0.18s ease, transform 0.18s ease, background 0.15s ease, visibility 0.18s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#plate-input:not(:placeholder-shown) ~ .clear-input {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1);
+}
+
+.clear-input:hover {
+  background: rgba(26, 34, 51, 0.18);
+}
+
+.clear-input:active {
+  transform: scale(0.86);
+}
+
+.clear-input svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
 #plate-input::placeholder {
   color: rgba(26, 34, 51, 0.35);
+}
+
+/* מסכים צרים — מקטין מעט את הספרות כדי שיישארו ממורכזות בין הכפתור למרווח */
+@media (max-width: 360px) {
+  #plate-input {
+    font-size: 1.55rem;
+    letter-spacing: 0.06em;
+  }
 }
 
 .hint {
