@@ -93,7 +93,7 @@ function showResult(record, plateDigits) {
 
 async function fetchVehicle(plateDigits) {
   // המאגר שומר את מספר הרכב כמספר, ולכן מסירים אפסים מובילים
-  const plateNumber = String(parseInt(plateDigits, 10));
+  const plateNumber = parseInt(plateDigits, 10);
   const params = new URLSearchParams({
     resource_id: RESOURCE_ID,
     filters: JSON.stringify({ mispar_rechev: plateNumber }),
@@ -106,16 +106,28 @@ async function fetchVehicle(plateDigits) {
     const response = await fetch(`${API_URL}?${params}`, { signal: controller.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    if (!data.success) throw new Error("CKAN request failed");
-    return data.result.records[0] || null;
+    if (!data?.success) throw new Error("CKAN request failed");
+    return data?.result?.records?.[0] || null;
   } finally {
     clearTimeout(timer);
   }
 }
 
 input.addEventListener("input", () => {
+  const digitsBeforeCursor = digitsOnly(input.value.slice(0, input.selectionStart)).length;
   const digits = digitsOnly(input.value).slice(0, 8);
-  input.value = formatPlate(digits);
+  const formatted = formatPlate(digits);
+  if (input.value === formatted) return;
+
+  input.value = formatted;
+  // מחזירים את הסמן למקומו: אחרי אותו מספר ספרות שהיו לפניו
+  let pos = 0;
+  let seen = 0;
+  while (pos < formatted.length && seen < digitsBeforeCursor) {
+    if (/\d/.test(formatted[pos])) seen += 1;
+    pos += 1;
+  }
+  input.setSelectionRange(pos, pos);
 });
 
 form.addEventListener("submit", async (event) => {
