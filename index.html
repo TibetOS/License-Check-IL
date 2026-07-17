@@ -34,11 +34,21 @@
     <div id="status" role="status" aria-live="polite"></div>
 
     <section id="result" class="card hidden" aria-label="פרטי הרכב">
+      <div id="result-banner" class="banner hidden"></div>
       <div class="card-header">
         <span id="result-plate" class="plate-badge" dir="ltr"></span>
         <h2 id="result-title"></h2>
       </div>
       <dl id="result-details" class="details"></dl>
+      <div id="recall-box" class="recall hidden" role="alert"></div>
+    </section>
+
+    <section id="recent" class="recent hidden" aria-label="חיפושים אחרונים">
+      <div class="recent-head">
+        <h3>חיפושים אחרונים</h3>
+        <button id="clear-recent" type="button">ניקוי</button>
+      </div>
+      <ul id="recent-list"></ul>
     </section>
 
     <footer class="footer">

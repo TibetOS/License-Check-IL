@@ -137,6 +137,132 @@ body {
   color: var(--muted);
 }
 
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.95rem;
+}
+
+.banner.hidden {
+  display: none;
+}
+
+.banner span {
+  font-size: 0.85rem;
+}
+
+.banner-warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid #fde68a;
+}
+
+.banner-info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.recall {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid #fecaca;
+  font-size: 0.9rem;
+}
+
+.recall.hidden {
+  display: none;
+}
+
+.recall p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+}
+
+.recent {
+  margin-top: 24px;
+}
+
+.recent.hidden {
+  display: none;
+}
+
+.recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.recent-head h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+#clear-recent {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+#clear-recent:hover {
+  color: var(--text);
+}
+
+#recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recent-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.recent-chip:hover {
+  border-color: var(--accent);
+  box-shadow: 0 1px 4px rgba(29, 78, 216, 0.15);
+}
+
+.recent-plate {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--plate-yellow);
+  border: 1px solid #1a2233;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 0.8rem;
+}
+
+.recent-label {
+  color: var(--muted);
+}
+
 .card {
   margin-top: 20px;
   background: var(--card-bg);
