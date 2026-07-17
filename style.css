@@ -167,6 +167,12 @@ body {
   border: 1px solid #bfdbfe;
 }
 
+.banner-error {
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid #fecaca;
+}
+
 .badge {
   display: inline-block;
   margin-inline-start: 8px;
@@ -187,6 +193,138 @@ body {
   background: var(--error-bg);
   color: var(--error-text);
   border: 1px solid #fecaca;
+}
+
+/* היסטוריית הרכב */
+
+.history {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.history.hidden {
+  display: none;
+}
+
+.history-slot {
+  margin-top: 10px;
+}
+
+.history-km {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.history-km-label {
+  color: #1e40af;
+  font-size: 0.8rem;
+}
+
+.history-km-value {
+  color: #1e3a8a;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.history .details dt {
+  font-size: 0.85rem;
+}
+
+.history .details dd {
+  font-size: 0.9rem;
+}
+
+.history-owners-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.hand-badge {
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.history-owners-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 2px 10px 2px 0;
+  border-inline-start: 2px solid #c7d2fe;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.history-owners-list li {
+  position: relative;
+  font-weight: 600;
+}
+
+.history-owners-list li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -15px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6366f1;
+}
+
+/* צ'יפים — דגלי היסטוריה וחיווים נקודתיים */
+
+.chip {
+  display: inline-block;
+  margin: 0 0 4px 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.chip-warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid #fde68a;
+}
+
+.chip-info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.chip-good {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.indicators {
+  margin-top: 16px;
+}
+
+.indicators.hidden {
+  display: none;
 }
 
 .safety {
@@ -255,6 +393,21 @@ body {
 .recall p {
   margin: 6px 0 0;
   font-size: 0.85rem;
+}
+
+.recall .recall-fix {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* מספר טלפון לא נשבר באמצע שורה */
+.recall .recall-fix [dir="ltr"] {
+  white-space: nowrap;
+}
+
+.recall a {
+  color: inherit;
 }
 
 .recent {
