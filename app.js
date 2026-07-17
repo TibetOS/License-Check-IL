@@ -23,6 +23,9 @@ const RESOURCES = {
   safetyDiscount: "83bfb278-7be1-4dab-ae2d-40125a923da1",
   particleFilter: "7cb2bd95-bf2e-49b6-aea1-fcb5ff6f0473",
   cargoAnchors: "786b33b5-75c4-42a3-a241-b1af3c9ca487",
+  constructionEquipment: "58dc4654-16b1-42ed-8170-98fadec153ea",
+  busFleet: "91d298ed-a260-4f93-9d50-d5e3c5b82ce1",
+  constructionPollution: "f2e130e8-bc94-4443-91bd-3ba3353b1494",
 };
 
 const RECENT_KEY = "lci_recent_v1";
@@ -123,6 +126,25 @@ function positiveNumber(value) {
   return Number.isFinite(num) && num > 0 ? num : null;
 }
 
+// דגל אבזור (0/1) בטבלת הדגמים — מציגים "כן" רק כשהאבזור קיים.
+// היעדר אינו מוצג כ"אין": ייתכן שהאבזור פשוט לא תועד בטבלת הדגם
+function yesOnly(value) {
+  return Number(value) === 1 ? "כן" : null;
+}
+
+// ממוצע נסועה שנתי מוערך: מד האוץ בטסט האחרון חלקי הוותק מהרישום הראשון.
+// הערכה בלבד (מד האוץ נכון לתאריך הטסט, לא להיום) — מסומן "~" בתצוגה.
+// רכב צעיר מחצי שנה מוחזר null כדי לא להציג ממוצע לא-אמין
+function annualMileage(kmValue, firstRegDate) {
+  const km = Number(kmValue);
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(firstRegDate || ""));
+  if (!Number.isFinite(km) || km <= 0 || !match) return null;
+  const start = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const years = (Date.now() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  if (years < 0.5) return null;
+  return Math.round(km / years);
+}
+
 /* קודי עומס ומהירות של צמיגים (תקן ETRTO): 88H -> 560 ק"ג, עד 210 קמ"ש */
 
 // עומס מרבי בק"ג לפי מדד עומס, החל ממדד 50
@@ -206,6 +228,29 @@ async function ckanSearch(resourceId, filters, limit = 1) {
   }
 }
 
+// שליפת מונה בלבד (total) לפי מסנן — limit=0 חוסך העברת רשומות.
+// משמש לחישוב נפוצות הדגם ("כמה כאלה על הכביש")
+async function ckanCount(resourceId, filters) {
+  const params = new URLSearchParams({
+    resource_id: resourceId,
+    filters: JSON.stringify(filters),
+    limit: "0",
+    include_total: "true",
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_URL}?${params}`, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (!data?.success) throw new Error("CKAN request failed");
+    const total = data?.result?.total;
+    return typeof total === "number" ? total : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /* ---------- הצגת תוצאות ---------- */
 
 // יצירת אלמנט בשורה אחת — כל התוכן מוזן דרך textContent (בטוח מ-XSS)
@@ -274,8 +319,8 @@ function renderCard({ plateDigits, title, banner, rows }) {
 }
 
 function vehicleTitle(record) {
-  const manufacturer = record.tozeret_nm || "";
-  const model = record.kinuy_mishari || record.degem_nm || "";
+  const manufacturer = record.tozeret_nm || record.shilda_totzar_en_nm || "";
+  const model = record.kinuy_mishari || record.degem_nm || record.sug_tzama_nm || "";
   return [manufacturer, model].filter(Boolean).join(" ");
 }
 
@@ -308,19 +353,46 @@ function mainRegistryRows(record) {
   ];
 }
 
+// דרגת רישיון נהיגה מוערכת לאופנוע לפי נפח והספק (כ"ס). ספי החוק בישראל:
+// A1 עד 125 סמ"ק והספק עד 14.6 כ"ס; A2 הספק עד 47 כ"ס; A מעל זה.
+// כשאין הספק אפשר להבחין רק לפי נפח — מוחזרת הערכה גסה
+function motorcycleLicense(record) {
+  const cc = Number(record.nefach_manoa);
+  if (!Number.isFinite(cc) || cc <= 0) return null;
+  const hp = Number(record.hespek);
+  const hasHp = Number.isFinite(hp) && hp > 0;
+  if (cc <= 125 && (!hasHp || hp <= 14.6)) return "A1";
+  if (!hasHp) return "A2 ומעלה";
+  if (hp <= 47) return "A2";
+  return "A";
+}
+
+// דירוג צמיגים לאופנוע — שמות השדות שונים מרכב פרטי (zmig ולא tzmig)
+function motorcycleTireRating(record) {
+  const front = decodeTireCodes(record.kod_omes_zmig_kidmi, record.kod_mehirut_zmig_kidmi);
+  const rear = decodeTireCodes(record.kod_omes_zmig_ahori, record.kod_mehirut_zmig_ahori);
+  if (front && rear && front !== rear) return `קדמי: ${front} · אחורי: ${rear}`;
+  return front || rear;
+}
+
 function motorcycleRows(record) {
   return [
     ["יצרן", record.tozeret_nm],
     ["דגם", record.degem_nm],
     ["סוג רכב", record.sug_rechev_nm],
+    ["סיווג EU", record.sug_rechev_EU_cd, { skip: true }],
     ["שנת ייצור", record.shnat_yitzur],
     ["ארץ ייצור", record.tozeret_eretz_nm, { skip: true }],
     ["נפח מנוע", withUnit(record.nefach_manoa, 'סמ"ק')],
     ["הספק", withUnit(record.hespek, 'כ"ס')],
+    ["רישיון נדרש (משוער)", motorcycleLicense(record), { skip: true }],
     ["סוג דלק", record.sug_delek_nm],
+    ["מספר מקומות", record.mispar_mekomot, { skip: true }],
+    ["משקל כולל", withUnit(positiveNumber(record.mishkal_kolel), 'ק"ג'), { skip: true }],
     ["בעלות", record.baalut],
     ["מספר שלדה", record.misgeret, { skip: true, ltr: true }],
     ["מידת צמיגים", tireSizes(record), { skip: true, ltr: true }],
+    ["דירוג צמיגים", motorcycleTireRating(record), { skip: true }],
     ["עלה לכביש", formatMonthYear(record.moed_aliya_lakvish)],
   ];
 }
@@ -427,6 +499,29 @@ function cancelledBanner(record) {
   };
 }
 
+// כלי צמ"ה (ציוד מכני הנדסי) — מלגזות, מנופים, טרקטורים. מאגר נפרד
+// עם מפתח משלו (mispar_tzama) ושדות ייחודיים (כושר הרמה, מגבלות)
+function constructionEquipmentRows(record) {
+  const restrictions = [record.hagbala_nm_1, record.hagbala_nm_2, record.hagbala_nm_3, record.hagbala_nm_4]
+    .map((x) => (x || "").trim())
+    .filter(Boolean)
+    .join(", ");
+  return [
+    ["סוג כלי", record.sug_tzama_nm],
+    ["יצרן", record.shilda_totzar_en_nm, { skip: true, ltr: true }],
+    ["דגם", record.degem_nm, { skip: true, ltr: true }],
+    ["שנת ייצור", record.shnat_yitzur],
+    ["הנעה", record.hanaa_nm, { skip: true }],
+    ["הספק", withUnit(positiveNumber(record.koah_sus), 'כ"ס'), { skip: true }],
+    ["כושר הרמה", withUnit(positiveNumber(record.kosher_harama_ton), "טון"), { skip: true }],
+    ["משקל עצמי", withUnit(positiveNumber(record.mishkal_ton), "טון"), { skip: true }],
+    ["משקל כולל", withUnit(positiveNumber(record.mishkal_kolel_ton), "טון"), { skip: true }],
+    ["מספר שלדה", record.mispar_shilda, { skip: true, ltr: true }],
+    ["תאריך רישום", formatDate(record.rishum_date), { skip: true }],
+    ["מגבלות", restrictions, { skip: true }],
+  ];
+}
+
 // מאגרי ארכיון הביטולים שומרים את מספר הרכב כטקסט עם אפסים מובילים
 // (למשל "04252235") — סינון מספרי נכשל שם, חובה מחרוזת בת 8 תווים
 function paddedPlateFilters(digits) {
@@ -474,7 +569,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הציבוריים (אוטובוסים ומוניות)",
     },
     rows: publicTransportRows,
-    enrich: { wltp: true, priceList: true, recalls: true },
+    enrich: { wltp: true, priceList: true, recalls: true, busFleet: true },
   },
   {
     resourceId: RESOURCES.heavyTrucks,
@@ -515,6 +610,20 @@ const FALLBACK_CHAIN = [
     },
     rows: inactiveOldRows,
     enrich: { recalls: true },
+  },
+  {
+    // מפתח שונה (mispar_tzama) ומרחב מספור נפרד — לכן אין להריץ העשרות
+    // לפי mispar_rechev (ריקול / תו חניה / היסטוריה), כדי לא להצליב בטעות
+    // עם רכב אחר שמספר הרישוי שלו זהה
+    resourceId: RESOURCES.constructionEquipment,
+    filters: (digits) => ({ mispar_tzama: parseInt(digits, 10) }),
+    banner: {
+      tone: "info",
+      title: 'כלי צמ"ה',
+      subtitle: 'הרכב מופיע במאגר כלי הצמ"ה (ציוד מכני הנדסי — מלגזות, מנופים, טרקטורים)',
+    },
+    rows: constructionEquipmentRows,
+    enrich: { plateKeyed: false, constructionPollution: true },
   },
 ];
 
@@ -591,10 +700,15 @@ function showHistorySlot(key) {
 function renderVehicleHistory(record) {
   const km = formatKm(record.kilometer_test_aharon);
   if (km) {
-    showHistorySlot("km").append(
+    const slot = showHistorySlot("km");
+    slot.append(
       el("span", "history-km-label", "מד אוץ בטסט האחרון"),
       el("span", "history-km-value", `${km} ק"מ`),
     );
+    const perYear = annualMileage(record.kilometer_test_aharon, record.rishum_rishon_dt);
+    if (perYear) {
+      slot.append(el("span", "history-km-sub", `ממוצע ~${perYear.toLocaleString("he-IL")} ק"מ לשנה`));
+    }
   }
 
   const facts = [
@@ -821,6 +935,10 @@ const WLTP_ROWS = [
   ["מרכב", (m) => m.merkav],
   ["מספר מושבים", (m) => m.mispar_moshavim],
   ["מספר דלתות", (m) => m.mispar_dlatot],
+  ["ארץ תוצרת", (m) => m.tozeret_eretz_nm],
+  ["מיזוג אוויר", (m) => yesOnly(m.mazgan_ind)],
+  ["גג נפתח", (m) => yesOnly(m.halon_bagg_ind)],
+  ["חישוקי סגסוגת", (m) => yesOnly(m.galgaley_sagsoget_kala_ind)],
   ["נפח מנוע", (m) => withUnit(m.nefah_manoa, 'סמ"ק')],
   ["משקל כולל", (m) => withUnit(m.mishkal_kolel, 'ק"ג')],
   ["כריות אוויר", (m) => m.mispar_kariot_avir],
@@ -837,6 +955,49 @@ const PRICE_ROWS = [
   ["מחיר מחירון מקורי", (listing) => formatPrice(listing.mehir)],
   ["יבואן", (listing) => listing.shem_yevuan],
 ];
+
+// צי האוטובוסים (מפתח bus_license_id = מספר הרכב) — מפעיל, ק"מ מצטבר, מיגון
+function busArmor(bus) {
+  const armor = [];
+  if (bus.stone_proof_nm && !/^לא/.test(bus.stone_proof_nm.trim())) armor.push("אבנים");
+  if (bus.bullet_proof_nm && !/^לא/.test(bus.bullet_proof_nm.trim())) armor.push("ירי");
+  return armor.length ? `ממוגן ${armor.join(" ו-")}` : null;
+}
+
+const BUS_ROWS = [
+  ["מפעיל", (b) => b.operator_nm],
+  ["אשכול", (b) => (b.cluster_nm && b.cluster_nm.trim() !== "לא מוגדר" ? b.cluster_nm : null)],
+  ["סוג אוטובוס", (b) => [b.BusSize_nm, b.BusType_nm].map((x) => (x || "").trim()).filter(Boolean).join(" · ")],
+  ["מקומות ישיבה", (b) => b.SeatsNum],
+  ["הנעה", (b) => b.PropulsionType_nm],
+  ['ק"מ מצטבר', (b) => (formatKm(b.total_kilometer) ? `${formatKm(b.total_kilometer)} ק"מ` : null)],
+  ["מיגון", (b) => busArmor(b)],
+];
+
+// דרגת זיהום ואישור פעילות לכלי צמ"ה (מפתח mispar_tzama)
+const TZAMA_POLLUTION_ROWS = [
+  ["יצרן", (p) => p.yatzran],
+  ["הספק", (p) => withUnit(positiveNumber(Math.round(Number(p.power_engine_kilowalt))), 'קו"ט')],
+  ["דרגת זיהום אוויר", (p) => p.dargat_zihum_avir],
+  ["מסנן חלקיקים", (p) => p.hutkan_mesanen_helkikim],
+  ["מורשה פעילות", (p) => p.murshe_peelut],
+];
+
+// "כמה כאלה על הכביש" — נספר במאגר הפעיל לפי דגם (ולפי שנת ייצור).
+// מתווסף כשורת פרטים בתחתית הכרטיס, רק כשיש לפחות מספר חיובי אחד
+function renderRarity(yearCount, allCount, year) {
+  const hasYear = typeof yearCount === "number" && yearCount > 0;
+  const hasAll = typeof allCount === "number" && allCount > 0;
+  if (!hasYear && !hasAll) return;
+  let value;
+  if (hasYear && year != null) {
+    value = `${yearCount.toLocaleString("he-IL")} משנת ${year}`;
+    if (hasAll && allCount !== yearCount) value += ` · ${allCount.toLocaleString("he-IL")} מכל השנים`;
+  } else {
+    value = `${(hasAll ? allCount : yearCount).toLocaleString("he-IL")} מכל השנים`;
+  }
+  appendDetailRow("כמה כאלה על הכביש", value);
+}
 
 function addPlaceholderRows(group, rowDefs) {
   rowDefs.forEach(([label], index) => {
@@ -873,46 +1034,9 @@ function modelJoinFilters(record) {
   return filters;
 }
 
-function startEnrichments(record, plateNumber, options, token) {
-  const guard = (fn) => (value) => {
-    if (token === searchToken) fn(value);
-  };
-  const ignore = () => {};
-
-  const joinFilters = modelJoinFilters(record);
-  const wantWltp = options.wltp && joinFilters;
-  const wantPrice = options.priceList && joinFilters;
-
-  if (options.continuation) addPlaceholderRows("continuation", CONTINUATION_ROWS);
-  if (wantWltp) addPlaceholderRows("wltp", WLTP_ROWS);
-  if (wantPrice) addPlaceholderRows("price", PRICE_ROWS);
-
-  if (options.continuation) {
-    ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
-      .then(guard((records) => {
-        if (records[0]) fillPlaceholderRows("continuation", CONTINUATION_ROWS, records[0]);
-      }))
-      .catch(ignore);
-  }
-
-  if (wantWltp) {
-    ckanSearch(RESOURCES.wltp, joinFilters)
-      .then(guard((records) => {
-        if (!records[0]) return;
-        fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
-        renderSafetyEquipment(records[0]);
-      }))
-      .catch(ignore);
-  }
-
-  if (wantPrice) {
-    ckanSearch(RESOURCES.priceList, joinFilters)
-      .then(guard((records) => {
-        if (records[0]) fillPlaceholderRows("price", PRICE_ROWS, records[0]);
-      }))
-      .catch(ignore);
-  }
-
+// העשרות שנשלפות לפי mispar_rechev בלבד. מופרד כדי שנוכל לדלג עליו
+// עבור מאגרים עם מפתח אחר (כלי צמ"ה) בלי לסכן הצלבה שגויה עם רכב אחר
+function startPlateKeyedEnrichments(plateNumber, guard, ignore) {
   // היסטוריית רכב והחלפות בעלות — הכיסוי חלקי (בעיקר רכבים חדשים),
   // לכן הסעיף מוצג רק כשיש נתונים ולעולם לא עם "—".
   // שורת "לא נמצאו נתונים" מוצגת רק כששתי הבקשות חזרו ריקות בהצלחה;
@@ -955,6 +1079,85 @@ function startEnrichments(record, plateNumber, options, token) {
       else renderPermitNone();
     }))
     .catch(ignore);
+}
+
+function startEnrichments(record, plateNumber, options, token) {
+  const guard = (fn) => (value) => {
+    if (token === searchToken) fn(value);
+  };
+  const ignore = () => {};
+  // כלי צמ"ה מגיע עם plateKeyed=false — מספרו (mispar_tzama) אינו מספר רישוי
+  const plateKeyed = options.plateKeyed !== false;
+
+  const joinFilters = modelJoinFilters(record);
+  const wantWltp = options.wltp && joinFilters;
+  const wantPrice = options.priceList && joinFilters;
+
+  if (options.continuation) addPlaceholderRows("continuation", CONTINUATION_ROWS);
+  if (wantWltp) addPlaceholderRows("wltp", WLTP_ROWS);
+  if (wantPrice) addPlaceholderRows("price", PRICE_ROWS);
+
+  if (options.continuation) {
+    ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
+      .then(guard((records) => {
+        if (records[0]) fillPlaceholderRows("continuation", CONTINUATION_ROWS, records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  if (wantWltp) {
+    ckanSearch(RESOURCES.wltp, joinFilters)
+      .then(guard((records) => {
+        if (!records[0]) return;
+        fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
+        renderSafetyEquipment(records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  if (wantPrice) {
+    ckanSearch(RESOURCES.priceList, joinFilters)
+      .then(guard((records) => {
+        if (records[0]) fillPlaceholderRows("price", PRICE_ROWS, records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  // נפוצות הדגם — כמה כאלה רשומים במאגר הפעיל (שתי ספירות: שנה + כל השנים).
+  // ספירות ה-total איטיות יחסית ולכן מתמלאות באיחור, בלי לעכב את הכרטיס
+  if (options.rarity && record.tozeret_cd != null && record.degem_cd != null) {
+    const base = { tozeret_cd: record.tozeret_cd, degem_cd: record.degem_cd };
+    const yearFilter = record.shnat_yitzur != null ? { ...base, shnat_yitzur: record.shnat_yitzur } : null;
+    Promise.all([
+      yearFilter ? ckanCount(RESOURCES.main, yearFilter).catch(() => null) : Promise.resolve(null),
+      ckanCount(RESOURCES.main, base).catch(() => null),
+    ]).then(guard(([yearCount, allCount]) => renderRarity(yearCount, allCount, record.shnat_yitzur)));
+  }
+
+  // צי האוטובוסים — מפעיל, ק"מ מצטבר, מיגון (למאגר הרכב הציבורי)
+  if (options.busFleet) {
+    addPlaceholderRows("bus", BUS_ROWS);
+    ckanSearch(RESOURCES.busFleet, { bus_license_id: plateNumber })
+      .then(guard((records) => {
+        if (records[0]) fillPlaceholderRows("bus", BUS_ROWS, records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  // דרגת זיהום ואישור פעילות לכלי צמ"ה (מפתח mispar_tzama = plateNumber)
+  if (options.constructionPollution) {
+    addPlaceholderRows("tzamapoll", TZAMA_POLLUTION_ROWS);
+    ckanSearch(RESOURCES.constructionPollution, { mispar_tzama: plateNumber })
+      .then(guard((records) => {
+        if (records[0]) fillPlaceholderRows("tzamapoll", TZAMA_POLLUTION_ROWS, records[0]);
+      }))
+      .catch(ignore);
+  }
+
+  // העשרות לפי מספר רישוי (היסטוריה, חיווים נקודתיים, תו חניה) — רק כאשר
+  // המפתח הוא mispar_rechev אמיתי; עבור כלי צמ"ה מדולג כדי לא להצליב בטעות
+  // עם רכב שמספרו זהה
+  if (plateKeyed) startPlateKeyedEnrichments(plateNumber, guard, ignore);
 
   if (options.recalls) {
     // שימו לב: שמות השדות במאגר הריקולים באותיות גדולות.
@@ -1057,7 +1260,7 @@ async function runSearch(digits) {
         rows: mainRegistryRows(record),
       });
       addRecent(digits, vehicleTitle(record));
-      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true }, token);
+      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true }, token);
       return;
     }
 
