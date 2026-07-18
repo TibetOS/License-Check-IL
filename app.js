@@ -1878,6 +1878,28 @@ function resetShareButton(plateDigits) {
 shareBtn.addEventListener("click", async () => {
   if (!currentPlateDigits) return;
   const url = plateUrl(currentPlateDigits);
+
+  // קודם מנסים לשתף את תמונת הכרטיס עם הקישור (וואטסאפ ודומיו); ביטול
+  // על ידי המשתמש עוצר כאן, וכל כשל אחר נופל בשקט לשיתוף הקישור הרגיל
+  if (navigator.canShare) {
+    try {
+      const blob = await buildShareCardBlob();
+      if (blob) {
+        const file = new File([blob], `rechev-${currentPlateDigits}.png`, { type: "image/png" });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `פרטי רכב ${formatPlate(currentPlateDigits)}`,
+            text: url,
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+
   try {
     if (navigator.share) {
       await navigator.share({ title: `פרטי רכב ${formatPlate(currentPlateDigits)}`, url });
@@ -1895,6 +1917,223 @@ shareBtn.addEventListener("click", async () => {
     // המשתמש ביטל את חלון השיתוף או שהגישה ללוח נדחתה
   }
 });
+
+/* ---------- כרטיס שיתוף — תמונת תמצית ----------
+   במקום קישור יבש, שיתוף מפיק תמונת כרטיס (canvas) שנוחתת יפה בוואטסאפ:
+   הלוחית הצהובה, שם הדגם, צ'יפי התמצית, תמונת הדגם (אם נטענה), עובדות
+   מפתח, וחותמת תאריך הבדיקה — צילום מסך שחי מחוץ לאפליקציה חייב לשאת
+   את התאריך שלו. הקישור החי מצורף לשיתוף, כך שכל נמען במרחק הקלה אחת
+   מבדיקה עדכנית. בדפדפן בלי שיתוף קבצים — נופלים לשיתוף הקישור הרגיל */
+
+// צבעי הצ'יפים בתמונה — תואמים ל-CSS (רקע, טקסט, מסגרת)
+const CARD_CHIP_COLORS = {
+  good: ["#ecfdf5", "#047857", "#a7f3d0"],
+  warn: ["#fef9c3", "#854d0e", "#fde68a"],
+  info: ["#eff6ff", "#1e40af", "#bfdbfe"],
+  bad: ["#fef2f2", "#b91c1c", "#fecaca"],
+  muted: ["#f4f4f5", "#71717a", "#e4e4e7"],
+};
+
+const CARD_FONT = "-apple-system, 'Segoe UI', Roboto, 'Heebo', Arial, sans-serif";
+
+// טעינה מחדש של תמונת הדגם עם CORS כדי שהקנבס לא "יוכתם" —
+// upload.wikimedia.org מגיש עם Access-Control-Allow-Origin: *
+function loadCardImage() {
+  const domImg = vehicleImageBox.querySelector("img");
+  if (vehicleImageBox.classList.contains("hidden") || !domImg?.src) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    const timer = setTimeout(() => resolve(null), 4000);
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = domImg.src;
+  });
+}
+
+// התוכן נאסף מה-DOM החי — תמיד מסונכרן עם מה שהמשתמש רואה
+function collectCardData() {
+  const chips = [...verdictBox.querySelectorAll(".chip")]
+    .filter((chip) => !chip.hidden)
+    .map((chip) => ({
+      text: chip.textContent,
+      tone: /chip-(\w+)/.exec(chip.className)?.[1] || "muted",
+    }));
+  const wanted = ["שנת ייצור", "צבע", "סוג דלק", "בעלות"];
+  const facts = [];
+  for (const dt of resultDetails.querySelectorAll("dt")) {
+    if (!wanted.includes(dt.textContent) || dt.hidden) continue;
+    const dd = dt.nextElementSibling;
+    const value = dd?.childNodes[0]?.textContent?.trim();
+    if (value && value !== "—") facts.push([dt.textContent, value]);
+  }
+  return {
+    plate: formatPlate(currentPlateDigits || ""),
+    title: resultTitle.textContent,
+    subtitle: resultSubtitle.classList.contains("hidden") ? "" : resultSubtitle.textContent,
+    chips,
+    facts: facts.slice(0, 4),
+  };
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// פריסת הצ'יפים לשורות ממורכזות לפי רוחב הטקסט בפועל
+function layoutCardChips(ctx, chips, maxWidth) {
+  ctx.font = `600 30px ${CARD_FONT}`;
+  const items = chips.map((chip) => ({ ...chip, width: ctx.measureText(chip.text).width + 48 }));
+  const rows = [[]];
+  let rowWidth = 0;
+  for (const item of items) {
+    const needed = item.width + (rows[rows.length - 1].length ? 14 : 0);
+    if (rowWidth + needed > maxWidth && rows[rows.length - 1].length) {
+      rows.push([]);
+      rowWidth = 0;
+    }
+    rows[rows.length - 1].push(item);
+    rowWidth += needed;
+  }
+  return rows;
+}
+
+async function buildShareCardBlob() {
+  const data = collectCardData();
+  if (!data.plate || !data.title) return null;
+  const vehicleImg = await loadCardImage();
+
+  const W = 1080;
+  const PAD = 72;
+  const measure = document.createElement("canvas").getContext("2d");
+  const chipRows = layoutCardChips(measure, data.chips, W - PAD * 2);
+
+  const imgH = vehicleImg
+    ? Math.min(430, Math.round((W - PAD * 2) * (vehicleImg.naturalHeight / vehicleImg.naturalWidth)))
+    : 0;
+  const headerH = 150 + 78 + (data.subtitle ? 48 : 0);
+  const chipsH = chipRows.length * 74 + 10;
+  const factsH = data.facts.length * 54 + (data.facts.length ? 26 : 0);
+  const footerH = 118;
+  const H = PAD + headerH + chipsH + (imgH ? imgH + 36 : 6) + factsH + footerH;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.direction = "rtl";
+  ctx.textAlign = "center";
+
+  ctx.fillStyle = "#f6f8fb";
+  ctx.fillRect(0, 0, W, H);
+
+  let y = PAD;
+
+  // הלוחית: צהוב ישראלי, מסגרת שחורה, פס כחול עם IL בקצה
+  const plateW = 460;
+  const plateH = 104;
+  const plateX = (W - plateW) / 2;
+  roundedRectPath(ctx, plateX, y, plateW, plateH, 14);
+  ctx.fillStyle = "#ffd320";
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#1f2937";
+  ctx.stroke();
+  ctx.save();
+  roundedRectPath(ctx, plateX, y, plateW, plateH, 14);
+  ctx.clip();
+  ctx.fillStyle = "#2563eb";
+  ctx.fillRect(plateX, y, 56, plateH);
+  ctx.fillStyle = "#fff";
+  ctx.font = `700 30px ${CARD_FONT}`;
+  ctx.fillText("IL", plateX + 28, y + plateH / 2 + 11);
+  ctx.restore();
+  ctx.fillStyle = "#111827";
+  ctx.font = `700 60px ${CARD_FONT}`;
+  // ממורכז בשטח הצהוב, אחרי הפס הכחול
+  ctx.fillText(data.plate, plateX + 56 + (plateW - 56) / 2, y + plateH / 2 + 22);
+  y += 150;
+
+  ctx.fillStyle = "#111827";
+  ctx.font = `700 52px ${CARD_FONT}`;
+  ctx.fillText(data.title, W / 2, y + 40, W - PAD * 2);
+  y += 78;
+  if (data.subtitle) {
+    ctx.fillStyle = "#6b7280";
+    ctx.font = `400 32px ${CARD_FONT}`;
+    ctx.fillText(data.subtitle, W / 2, y + 22, W - PAD * 2);
+    y += 48;
+  }
+
+  for (const row of chipRows) {
+    const rowWidth = row.reduce((sum, c) => sum + c.width, 0) + (row.length - 1) * 14;
+    let x = (W - rowWidth) / 2;
+    for (const chip of row) {
+      const [bg, fg, border] = CARD_CHIP_COLORS[chip.tone] || CARD_CHIP_COLORS.muted;
+      roundedRectPath(ctx, x, y, chip.width, 58, 29);
+      ctx.fillStyle = bg;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = border;
+      ctx.stroke();
+      ctx.fillStyle = fg;
+      ctx.font = `600 30px ${CARD_FONT}`;
+      ctx.fillText(chip.text, x + chip.width / 2, y + 39);
+      x += chip.width + 14;
+    }
+    y += 74;
+  }
+  y += 10;
+
+  if (vehicleImg && imgH) {
+    const imgW = W - PAD * 2;
+    ctx.save();
+    roundedRectPath(ctx, PAD, y, imgW, imgH, 18);
+    ctx.clip();
+    ctx.drawImage(vehicleImg, PAD, y, imgW, imgH);
+    ctx.restore();
+    y += imgH + 36;
+  } else {
+    y += 6;
+  }
+
+  if (data.facts.length) {
+    ctx.font = `400 32px ${CARD_FONT}`;
+    for (const [label, value] of data.facts) {
+      ctx.fillStyle = "#6b7280";
+      ctx.textAlign = "right";
+      ctx.fillText(label, W - PAD, y + 24);
+      ctx.fillStyle = "#111827";
+      ctx.textAlign = "left";
+      ctx.font = `600 32px ${CARD_FONT}`;
+      ctx.fillText(value, PAD, y + 24);
+      ctx.font = `400 32px ${CARD_FONT}`;
+      y += 54;
+    }
+    ctx.textAlign = "center";
+    y += 26;
+  }
+
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(PAD, y);
+  ctx.lineTo(W - PAD, y);
+  ctx.stroke();
+  const checkedAt = new Date();
+  const stamp = `${String(checkedAt.getDate()).padStart(2, "0")}.${String(checkedAt.getMonth() + 1).padStart(2, "0")}.${checkedAt.getFullYear()}`;
+  ctx.fillStyle = "#6b7280";
+  ctx.font = `400 28px ${CARD_FONT}`;
+  ctx.fillText(`🚗 בדיקת כלי רכב · נבדק ב-${stamp} · הנתונים ממאגרי משרד התחבורה`, W / 2, y + 52, W - PAD * 2);
+
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
 
 /* ---------- זרימת החיפוש ---------- */
 
