@@ -41,6 +41,7 @@ const resultBanner = document.getElementById("result-banner");
 const resultPlate = document.getElementById("result-plate");
 const resultTitle = document.getElementById("result-title");
 const resultSubtitle = document.getElementById("result-subtitle");
+const vehicleImageBox = document.getElementById("vehicle-image");
 const verdictBox = document.getElementById("verdict-box");
 const resultDetails = document.getElementById("result-details");
 const historyBox = document.getElementById("history-box");
@@ -302,6 +303,10 @@ function hideResult() {
   verdictBox.replaceChildren();
   resultSubtitle.classList.add("hidden");
   resultSubtitle.textContent = "";
+  const vehicleImg = vehicleImageBox.querySelector("img");
+  vehicleImg.onload = null;
+  vehicleImg.removeAttribute("src");
+  vehicleImageBox.classList.add("hidden");
   for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
@@ -656,6 +661,111 @@ const FALLBACK_CHAIN = [
     enrich: { plateKeyed: false, constructionPollution: true },
   },
 ];
+
+/* ---------- תמונת הדגם (ויקיפדיה) ----------
+   תמונה מייצגת של הדגם מוויקיפדיה האנגלית — API חופשי, ללא מפתח, תומך
+   CORS. פרטיות: לוויקיפדיה נשלח שם הדגם בלבד, לעולם לא מספר הרישוי.
+   התמונה להמחשה בלבד (עשויה להציג דור/צבע אחרים) ומסומנת ככזו.
+   כל כשל או ספק = פשוט אין תמונה — לעולם לא תמונה שגויה */
+
+const WIKI_API = "https://en.wikipedia.org/w/api.php";
+
+// מילון יצרנים עברית→אנגלית לפי האיות בפועל במאגר (שדה tozeret_nm מתחיל
+// בשם היצרן ואחריו ארץ ייצור). ההתאמה לפי הקידומת הארוכה ביותר
+const MAKER_EN = {
+  "אאודי": "Audi", "אודי": "Audi", "אופל": "Opel", "איווקו": "Iveco",
+  "איסוזו": "Isuzu", "אינפיניטי": "Infiniti", "אלפא רומיאו": "Alfa Romeo",
+  "אסטון מרטין": "Aston Martin", "אקספנג": "XPeng", "אומודה": "Omoda",
+  "ב מ וו": "BMW", "בי ווי די": "BYD", "ביואיק": "Buick", "בנטלי": "Bentley",
+  "ג'יפ": "Jeep", "גיפ": "Jeep", "גילי": "Geely", "גרייט וול": "Great Wall",
+  "דאציה": "Dacia", "דודג'": "Dodge", "דונגפנג": "Dongfeng", "דייהטסו": "Daihatsu",
+  "הונדה": "Honda", "וולבו": "Volvo", "זיקר": "Zeekr", "טויוטה": "Toyota",
+  "טסלה": "Tesla", "יגואר": "Jaguar", "יונדאי": "Hyundai", "לוטוס": "Lotus",
+  "לינק אנד קו": "Lynk & Co", "לינקולן": "Lincoln", "ליפמוטור": "Leapmotor",
+  "למבורגיני": "Lamborghini", "לנדרובר": "Land Rover", "לקסוס": "Lexus",
+  "מ.ג": "MG", "מאן": "MAN", "מזארטי": "Maserati", "מזדה": "Mazda",
+  "מיני": "Mini", "מיצובישי": "Mitsubishi", "מקלארין": "McLaren",
+  "מקסוס": "Maxus", "מרצדס": "Mercedes-Benz", "ניאו": "NIO", "ניסאן": "Nissan",
+  "סאאב": "Saab", "סאנגיונג": "SsangYong", "סובארו": "Subaru", "סוזוקי": "Suzuki",
+  "סיאט": "SEAT", "סיטרואן": "Citroen", "סמארט": "Smart", "סקודה": "Skoda",
+  "פולסטאר": "Polestar", "פולקסווגן": "Volkswagen", "פורד": "Ford",
+  "פורשה": "Porsche", "פיאג'ו": "Piaggio", "פיאט": "Fiat", "פיג'ו": "Peugeot",
+  "פיגו": "Peugeot", "פרארי": "Ferrari", "צ'רי": "Chery", "קאדילאק": "Cadillac",
+  "קופרה": "Cupra", "קיה": "Kia", "קרייזלר": "Chrysler", "רובר": "Rover",
+  "רולס-רויס": "Rolls-Royce", "רנו": "Renault", "שברולט": "Chevrolet",
+};
+
+function makerEnglish(tozeretNm) {
+  const name = String(tozeretNm || "").trim();
+  let best = null;
+  for (const [he, en] of Object.entries(MAKER_EN)) {
+    if (name.startsWith(he) && (!best || he.length > best.length)) {
+      best = he;
+    }
+  }
+  return best ? MAKER_EN[best] : null;
+}
+
+// נירמול להשוואת כותרות: הסרת ניקוד/סימנים (Škoda → skoda) והשארת
+// אותיות וספרות לטיניות בלבד
+function normalizeForMatch(text) {
+  return String(text)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function showVehicleImage(src, title, articleUrl) {
+  const img = vehicleImageBox.querySelector("img");
+  const link = vehicleImageBox.querySelector("a");
+  // התמונה נחשפת רק אחרי שנטענה בפועל — בלי מסגרת ריקה או אייקון שבור
+  img.onload = () => vehicleImageBox.classList.remove("hidden");
+  img.alt = `תמונה להמחשה: ${title}`;
+  if (articleUrl) link.href = articleUrl;
+  img.src = src;
+}
+
+async function fetchVehicleImage(record, guard) {
+  const kinuy = String(record.kinuy_mishari || "").trim();
+  const make = makerEnglish(record.tozeret_nm);
+  const normKinuy = normalizeForMatch(kinuy);
+  if (!normKinuy) return;
+  // בלי יצרן מזוהה — שאילתה רק כשהכינוי ייחודי דיו (לא "3" וכד')
+  if (!make && normKinuy.length < 4) return;
+
+  const params = new URLSearchParams({
+    action: "query",
+    generator: "search",
+    gsrsearch: make ? `${make} ${kinuy}` : kinuy,
+    gsrlimit: "1",
+    prop: "pageimages|info",
+    piprop: "thumbnail",
+    pithumbsize: "480",
+    inprop: "url",
+    format: "json",
+    origin: "*",
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${WIKI_API}?${params}`, { signal: controller.signal });
+    if (!response.ok) return;
+    const data = await response.json();
+    const page = Object.values(data?.query?.pages || {})[0];
+    if (!page?.thumbnail?.source) return;
+    // שומר בטיחות: כותרת הערך חייבת להכיל את שם הדגם (ואת היצרן, כשידוע) —
+    // אחרת התוצאה היא כנראה ערך היצרן או ערך לא קשור, ועדיף בלי תמונה
+    const normTitle = normalizeForMatch(page.title);
+    if (!normTitle.includes(normKinuy)) return;
+    if (make && !normTitle.includes(normalizeForMatch(make))) return;
+    guard(() => showVehicleImage(page.thumbnail.source, page.title, page.fullurl))();
+  } catch {
+    // אין רשת / חריגה מהזמן — פשוט בלי תמונה
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /* ---------- שורת התמצית (צ'יפים מתחת לכותרת) ----------
    תשובה במבט אחד לשלוש השאלות שכל קונה שואל: טסט, ריקולים, יד.
@@ -1215,6 +1325,7 @@ function startEnrichments(record, plateNumber, options, token) {
   prepareVerdictBox();
   fillTestVerdict(record);
   renderStory(record);
+  fetchVehicleImage(record, guard);
 
   const joinFilters = modelJoinFilters(record);
   const wantWltp = options.wltp && joinFilters;

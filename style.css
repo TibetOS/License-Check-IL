@@ -708,6 +708,33 @@ body {
   display: none;
 }
 
+/* תמונת הדגם — להמחשה בלבד, מוצגת רק אחרי טעינה מוצלחת */
+.vehicle-image {
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.vehicle-image.hidden {
+  display: none;
+}
+
+.vehicle-image a {
+  display: inline-block;
+}
+
+.vehicle-image img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.vehicle-image figcaption {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 /* שורת התמצית — צ'יפי טסט / ריקולים / יד מתחת לכותרת הכרטיס */
 .verdict {
   display: flex;
