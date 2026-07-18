@@ -138,8 +138,8 @@ Two verified facts combine into a "כמה עולה לתדלק אותו בשנה"
   (last modified 2026-07-01).
 - The WLTP model table has **no liters/100km column** (verified the schema —
   only `kamut_CO2`, `kamut_CO2_city`, `kamut_CO2_hway`, `CO2_WLTP`), but
-  consumption derives from CO₂ by chemistry: petrol ≈ CO₂ g/km ÷ 2,392 g/L,
-  diesel ≈ ÷ 2,640 g/L → l/100km.
+  consumption derives from CO₂ by chemistry: l/100km ≈ CO₂ g/km × 100 ÷
+  2,392 g/L for petrol (÷ 2,640 g/L for diesel) — e.g. 150 g/km ≈ 6.3 l/100km.
 
 Combined with the average-annual-km figure the app already computes per
 vehicle: `annual cost ≈ annual km × l/km × price/L`.
