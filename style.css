@@ -858,6 +858,9 @@ body {
   z-index: 1000;
   display: none;
   background: #000;
+  /* זום דיגיטלי מגדיל את הווידאו מעבר למסך; צביטה שייכת לזום הסורק */
+  overflow: hidden;
+  touch-action: none;
 }
 
 .scanner-overlay.open {
@@ -870,6 +873,8 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* זום דיגיטלי — הגדלה סביב המרכז, היכן שהמסגרת ממוקמת */
+  transform-origin: center center;
 }
 
 .scanner-close {
@@ -1023,6 +1028,126 @@ body {
   color: #fff;
   font-size: 0.95rem;
   text-align: center;
+}
+
+/* סרגל תחתון: כפתורי זום + העלאת תמונה */
+.scanner-controls {
+  position: absolute;
+  bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.scanner-zoom {
+  display: flex;
+  gap: 6px;
+}
+
+.scanner-zoom-btn {
+  min-width: 42px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-zoom-btn.active {
+  background: #fff;
+  color: #1a2233;
+}
+
+.scanner-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-upload:hover,
+.scanner-zoom-btn:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.scanner-upload:hover {
+  color: #fff;
+}
+
+.scanner-upload svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* בחירת מועמד מתוך תמונה — פאנל מרכזי מעל הסרגל התחתון */
+.scanner-candidates {
+  position: absolute;
+  bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+  left: 16px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.scanner-candidates-label {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.scanner-candidate {
+  padding: 4px 18px;
+  border: 2px solid #1a2233;
+  border-radius: 6px;
+  background: var(--plate-yellow);
+  color: #1a2233;
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-candidate-dismiss {
+  margin-top: 2px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .scanner-privacy {
