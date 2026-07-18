@@ -3,13 +3,14 @@
    ישנה), נפילה למטמון כשאין רשת. בקשות חוצות-מקור (data.gov.il) אינן
    מיורטות כלל — תוצאות חיפוש תמיד מגיעות חיות מהמאגר הממשלתי. */
 
-const CACHE_NAME = "lci-shell-v1";
+const CACHE_NAME = "lci-shell-v2";
 
 const SHELL_ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
+  "./scanner.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
