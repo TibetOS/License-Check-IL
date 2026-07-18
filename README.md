@@ -45,6 +45,16 @@ python3 -m http.server 8000
 
 הפעלה חד-פעמית: בעמוד ה-repository ב-GitHub, **Settings → Pages**, ותחת **Build and deployment** בחרו Source: **GitHub Actions**. מאותו רגע כל push ל-`main` יפרסם אוטומטית לכתובת `https://<username>.github.io/License-Check-IL/`.
 
+### עמוד Staging (תצוגה מקדימה)
+
+push לענף `staging` פורס את תוכנו לכתובת `https://<username>.github.io/License-Check-IL/staging/` — עמוד חי לבדיקת שינויים לפני מיזוג ל-`main`, בלי לגעת באתר הראשי. כדי להעלות ענף עבודה ל-staging:
+
+```bash
+git push origin <branch>:staging --force
+```
+
+(ה-Service Worker של כל סביבה מבודד לפי scope, כך ששתי הסביבות אינן מתנגשות במטמון.)
+
 ## מקור הנתונים
 
 - CKAN API: `https://data.gov.il/api/3/action/datastore_search`

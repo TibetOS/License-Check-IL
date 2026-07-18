@@ -1,8 +1,11 @@
 name: Deploy to GitHub Pages
 
+# האתר מורכב משני ענפים: main נפרס בשורש, וענף staging (אם קיים) נפרס
+# תחת ‎/staging/‎ — עמוד תצוגה מקדימה חי לבדיקת שינויים לפני מיזוג ל-main.
+# דחיפה לכל אחד מהענפים פורסת מחדש את האתר המורכב משניהם.
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   workflow_dispatch:
 
 permissions:
@@ -21,8 +24,26 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      - name: Checkout staging
+        id: staging
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: staging
+          path: staging
+      - name: Assemble site (main at root, staging under /staging/)
+        run: |
+          mkdir -p _site
+          rsync -a --exclude .git main/ _site/
+          if [ -f staging/index.html ]; then
+            mkdir -p _site/staging
+            rsync -a --exclude .git staging/ _site/staging/
+          fi
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
@@ -30,7 +51,7 @@ jobs:
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

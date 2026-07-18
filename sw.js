@@ -5,8 +5,11 @@
 
 // חשוב: ניווטים ללא-רשת נופלים תמיד ל-index.html מהמטמון של ההתקנה,
 // ולכן כל שינוי בקבצי המעטפת (ובמיוחד index.html) מחייב העלאת גרסה כאן —
-// אחרת משתמש לא-מקוון יקבל מעטפת ישנה עם סקריפטים חדשים
-const CACHE_NAME = "lci-shell-v4";
+// אחרת משתמש לא-מקוון יקבל מעטפת ישנה עם סקריפטים חדשים.
+// שם המטמון כולל את ה-scope: אתר ה-staging (‎/staging/‎) חי באותו origin,
+// ובלי ההפרדה שני ה-workers היו מוחקים זה לזה את המטמון בכל עדכון גרסה
+const CACHE_PREFIX = "lci-shell-";
+const CACHE_NAME = `${CACHE_PREFIX}v4::${self.registration.scope}`;
 
 const SHELL_ASSETS = [
   "./",
@@ -31,10 +34,19 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  // מנקים רק גרסאות ישנות של ה-scope הזה (או שמות מהתקופה שלפני ההפרדה,
+  // ללא ‎::‎) — לעולם לא את המטמון החי של ה-scope השני באותו origin
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) =>
+            key.startsWith(CACHE_PREFIX) &&
+            key !== CACHE_NAME &&
+            (!key.includes("::") || key.endsWith(`::${self.registration.scope}`)))
+          .map((key) => caches.delete(key)),
+      ))
       .then(() => self.clients.claim()),
   );
 });
