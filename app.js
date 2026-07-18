@@ -1249,7 +1249,7 @@ let shareFeedbackTimer = null;
 
 function plateUrl(digits) {
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ plate: digits }).toString();
+  url.searchParams.set("plate", digits);
   url.hash = "";
   return url.toString();
 }
