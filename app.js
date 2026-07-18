@@ -55,6 +55,9 @@ const recentList = document.getElementById("recent-list");
 const clearRecentBtn = document.getElementById("clear-recent");
 const shareBtn = document.getElementById("share-btn");
 const shareBtnLabel = document.getElementById("share-btn-label");
+const myCarBtn = document.getElementById("mycar-btn");
+const myCarBtnLabel = document.getElementById("mycar-btn-label");
+const myCarSection = document.getElementById("mycar");
 
 const MESSAGES = {
   invalid: "מספר רישוי חייב להכיל 2 עד 8 ספרות",
@@ -208,16 +211,21 @@ function formatPrice(value) {
 // סף "מסתיים בקרוב" לתוקף רישיון הרכב (ימים)
 const EXPIRY_SOON_DAYS = 30;
 
-// תג תוקף לפי תאריך ISO: "בתוקף" / "פג תוקף", וכשהתוקף מסתיים בתוך
-// 30 יום — תג כתום עם ספירת הימים שנותרו
-function validityBadge(isoDate) {
-  if (!isoDate) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate));
+// ימים שנותרו עד תאריך ISO (שלילי = עבר); null כשאין תאריך תקין
+function daysUntil(isoDate) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate || ""));
   if (!match) return null;
   const today = new Date();
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const expiry = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const days = Math.round((expiry - startOfToday) / 86400000);
+  return Math.round((expiry - startOfToday) / 86400000);
+}
+
+// תג תוקף לפי תאריך ISO: "בתוקף" / "פג תוקף", וכשהתוקף מסתיים בתוך
+// 30 יום — תג כתום עם ספירת הימים שנותרו
+function validityBadge(isoDate) {
+  const days = daysUntil(isoDate);
+  if (days == null) return null;
   if (days < 0) return { text: "פג תוקף", tone: "expired" };
   if (days === 0) return { text: "מסתיים היום", tone: "expiring" };
   if (days <= EXPIRY_SOON_DAYS) {
@@ -299,6 +307,8 @@ function clearMessage() {
 function hideResult() {
   resultCard.classList.add("hidden");
   resultBanner.classList.add("hidden");
+  myCarCandidate = null;
+  myCarBtn.classList.add("hidden");
   resultDetails.replaceChildren();
   verdictBox.classList.add("hidden");
   verdictBox.replaceChildren();
@@ -329,6 +339,54 @@ function setBanner(banner) {
   }
 }
 
+/* ---------- הסברי שורות ("מה זה?") ----------
+   מונחים מקצועיים מקבלים כפתור ⓘ ליד התווית; לחיצה פותחת הסבר קצר
+   ושורת מקור — שקיפות על מקור כל נתון היא הבסיס לאמון בכלי. עובד במגע
+   (בלי hover), נסגר בלחיצה חוזרת */
+
+const SOURCE_MOT = "מאגר הרישוי, משרד התחבורה";
+const SOURCE_WLTP = "טבלת נתוני הדגמים, משרד התחבורה";
+
+const ROW_INFO = {
+  "קבוצת זיהום": ["דירוג זיהום האוויר של הדגם בסולם 1 (נקי ביותר) עד 15 (מזהם ביותר). משפיע על גובה אגרת הרישוי.", SOURCE_MOT],
+  "מספר שלדה": ["מספר הזיהוי הייחודי של הרכב (VIN) — מוטבע על השלדה ומלווה את הרכב כל חייו. כדאי לוודא שהוא תואם למוטבע ברכב עצמו.", SOURCE_MOT],
+  "יצרן לפי מספר השלדה": ["קידומת מספר השלדה מזהה את היצרן באופן בלתי תלוי ברישום. אי-התאמה ליצרן הרשום עלולה להעיד על לוחית שהועתקה מרכב אחר או על שגיאת רישום.", "פענוח מקומי של קידומת ה-VIN (ללא שליחת נתונים)"],
+  "רמת גימור": ["שם תצורת האבזור של הדגם כפי שנרשמה על ידי היבואן.", SOURCE_MOT],
+  "דירוג צמיגים": ["העומס והמהירות המרביים המותרים לצמיג, מפוענחים מהקוד המוטבע על דופן הצמיג (תקן ETRTO).", "מאגר הרישוי (קובץ המשך), משרד התחבורה"],
+  "מדד ירוק": ["ציון סביבתי משוקלל של הדגם — ככל שהמספר נמוך יותר, הרכב מזהם פחות.", SOURCE_WLTP],
+  "קבוצת אגרת רישוי": ["קבוצת המחיר של אגרת הרישוי השנתית — נקבעת לפי מחיר הרכב ורמת הזיהום שלו.", SOURCE_WLTP],
+  "ניקוד בטיחות": ["ניקוד מערכות הבטיחות המותקנות בדגם; ככל שגבוה יותר — אבזור הבטיחות עשיר יותר.", SOURCE_WLTP],
+  "רמת אבזור בטיחותי": ["דירוג משרד התחבורה לאבזור הבטיחות של הדגם, בסולם 0 עד 8.", SOURCE_WLTP],
+  "טכנולוגיית הנעה": ["סוג מערכת ההנעה: בנזין/דיזל רגיל, היברידי, פלאג-אין או חשמלי מלא.", SOURCE_WLTP],
+  "כושר גרירה": ["המשקל המרבי המותר לגרירה עם גרור בעל בלמים, לפי אישור היצרן.", SOURCE_WLTP],
+  "מחיר מחירון מקורי": ["מחיר המחירון של הדגם בעת עלייתו לכביש, לפי דיווח היבואן. אינו מחיר שוק נוכחי.", "מחירוני היבואנים, משרד התחבורה"],
+  "כמה כאלה על הכביש": ["ספירה חיה של רכבים מאותו דגם במאגר הרכב הפעיל — אינדיקציה לנפוצות (חלפים וביקוש) או לנדירות.", SOURCE_MOT],
+  "סיווג EU": ["קטגוריית הרישוי האירופית של הרכב (L לדו-גלגלי, M לנוסעים, N למסחרי).", SOURCE_MOT],
+  "רישיון נדרש (משוער)": ["הערכה לפי נפח המנוע וההספק: A1 עד 125 סמ\"ק, A2 עד 47 כ\"ס, A מעל. הדרגה המחייבת היא זו שברישיון הרכב.", "חישוב מקומי לפי נפח והספק"],
+};
+
+function attachRowInfo(dt, dd) {
+  const info = ROW_INFO[dt.textContent];
+  if (!info) return;
+  const button = el("button", "info-btn", "?");
+  button.type = "button";
+  button.setAttribute("aria-label", `מה זה ${dt.textContent}?`);
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", () => {
+    const existing = dd.querySelector(".row-note");
+    if (existing) {
+      existing.remove();
+      button.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const note = el("div", "row-note");
+    note.append(el("span", null, info[0]), el("span", "row-note-source", `מקור: ${info[1]}`));
+    dd.appendChild(note);
+    button.setAttribute("aria-expanded", "true");
+  });
+  dt.appendChild(button);
+}
+
 // opts: skip — לדלג על שורה ריקה במקום להציג "—"; ltr — ערך טכני (VIN וכד');
 // badge — תג {text, tone} שמוצג ליד הערך
 function appendDetailRow(label, value, opts = {}) {
@@ -339,7 +397,9 @@ function appendDetailRow(label, value, opts = {}) {
   if (opts.badge && !empty) {
     dd.appendChild(el("span", `badge badge-${opts.badge.tone}`, opts.badge.text));
   }
-  resultDetails.append(el("dt", null, label), dd);
+  const dt = el("dt", null, label);
+  attachRowInfo(dt, dd);
+  resultDetails.append(dt, dd);
 }
 
 function renderCard({ plateDigits, title, banner, rows }) {
@@ -1537,6 +1597,7 @@ function addPlaceholderRows(group, rowDefs) {
   rowDefs.forEach(([label], index) => {
     const dt = el("dt", null, label);
     const dd = el("dd");
+    attachRowInfo(dt, dd);
     dt.hidden = dd.hidden = true;
     dt.dataset.enrich = dd.dataset.enrich = `${group}-${index}`;
     resultDetails.append(dt, dd);
@@ -1918,6 +1979,154 @@ shareBtn.addEventListener("click", async () => {
   }
 });
 
+/* ---------- הרכב שלי ----------
+   שמירה מקומית (localStorage בלבד) של רכב אחד — בדרך כלל הרכב של
+   המשתמש עצמו: כפתור ⭐ בכרטיס שומר, ופאנל במסך הבית מציג את הרכב עם
+   ספירה לאחור לתוקף הטסט, בדיקה חוזרת בלחיצה, והורדת תזכורת ליומן
+   (קובץ ‎.ics‎ שנוצר במכשיר). בדיקה חוזרת של הרכב השמור מרעננת את
+   הנתונים השמורים אוטומטית. שום דבר לא נשלח לשרת */
+
+const MYCAR_KEY = "lci_mycar_v1";
+
+// הרכב שמוצג כרגע בכרטיס — מועמד לשמירה בלחיצת הכפתור
+let myCarCandidate = null;
+
+function loadMyCar() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MYCAR_KEY));
+    return stored && stored.p ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMyCar(car) {
+  try {
+    if (car) localStorage.setItem(MYCAR_KEY, JSON.stringify(car));
+    else localStorage.removeItem(MYCAR_KEY);
+  } catch {
+    // אחסון לא זמין — הפיצ'ר פשוט לא פעיל
+  }
+}
+
+function refreshMyCarButton() {
+  const saved = loadMyCar();
+  const isSaved = Boolean(saved && myCarCandidate && saved.p === myCarCandidate.p);
+  myCarBtnLabel.textContent = isSaved ? "★ נשמר כרכב שלי" : "☆ שמירה כרכב שלי";
+  myCarBtn.classList.toggle("mycar-saved", isSaved);
+  myCarBtn.classList.toggle("hidden", !myCarCandidate);
+}
+
+// נקרא בכל תוצאה: מעדכן את המועמד לשמירה, ואם זה הרכב השמור — מרענן
+// את הנתונים השמורים (כותרת ותוקף) מהבדיקה הטרייה
+function updateMyCarCandidate(digits, title, tokefDt) {
+  myCarCandidate = { p: digits, l: title || "", tokef: tokefDt || null };
+  const saved = loadMyCar();
+  if (saved && saved.p === digits) {
+    saveMyCar(myCarCandidate);
+    renderMyCarPanel();
+  }
+  refreshMyCarButton();
+}
+
+myCarBtn.addEventListener("click", () => {
+  if (!myCarCandidate) return;
+  const saved = loadMyCar();
+  saveMyCar(saved && saved.p === myCarCandidate.p ? null : myCarCandidate);
+  refreshMyCarButton();
+  renderMyCarPanel();
+});
+
+// צ'יפ מצב הטסט בפאנל — אותם ספים כמו תג התוקף בכרטיס
+function myCarTestChip(tokef) {
+  const days = daysUntil(tokef);
+  if (days == null) return null;
+  if (days < 0) return el("span", "chip chip-bad", "❌ הטסט פג תוקף");
+  if (days === 0) return el("span", "chip chip-warn", "⚠️ הטסט מסתיים היום");
+  if (days <= EXPIRY_SOON_DAYS) {
+    return el("span", "chip chip-warn", days === 1 ? "⚠️ הטסט מסתיים מחר" : `⚠️ הטסט מסתיים בעוד ${days} ימים`);
+  }
+  return el("span", "chip chip-good", `✅ טסט בתוקף עד ${formatDate(tokef)} (עוד ${days} ימים)`);
+}
+
+// קובץ תזכורת ליומן: אירוע יום-שלם שבועיים לפני תום התוקף (או מחר,
+// אם נשארו פחות משבועיים), עם קישור לבדיקה עדכנית
+function downloadTestReminder(car) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(car.tokef || ""));
+  if (!match) return;
+  const due = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  let remind = new Date(due);
+  remind.setDate(remind.getDate() - 14);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (remind < tomorrow) remind = tomorrow;
+  const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const esc = (s) => String(s).replace(/([\\;,])/g, "\\$1");
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//License-Check-IL//HE",
+    "BEGIN:VEVENT",
+    `UID:lci-${car.p}-${ymd(due)}@license-check-il`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+    `DTSTART;VALUE=DATE:${ymd(remind)}`,
+    `SUMMARY:${esc(`תזכורת: טסט לרכב ${formatPlate(car.p)} עד ${formatDate(car.tokef)}`)}`,
+    `DESCRIPTION:${esc(`תוקף רישיון הרכב מסתיים ב-${formatDate(car.tokef)}. לבדיקה עדכנית: ${plateUrl(car.p)}`)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ];
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `test-reminder-${car.p}.ics`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+}
+
+function renderMyCarPanel() {
+  const car = loadMyCar();
+  myCarSection.replaceChildren();
+  myCarSection.classList.toggle("hidden", !car);
+  if (!car) return;
+
+  const head = el("div", "recent-head");
+  head.appendChild(el("h3", null, "⭐ הרכב שלי"));
+  const removeBtn = el("button", null, "הסרה");
+  removeBtn.type = "button";
+  removeBtn.addEventListener("click", () => {
+    saveMyCar(null);
+    renderMyCarPanel();
+    refreshMyCarButton();
+  });
+  head.appendChild(removeBtn);
+
+  const row = el("div", "mycar-row");
+  const checkBtn = el("button", "recent-chip");
+  checkBtn.type = "button";
+  const plateSpan = el("span", "recent-plate", formatPlate(car.p));
+  plateSpan.dir = "ltr";
+  checkBtn.appendChild(plateSpan);
+  if (car.l) checkBtn.appendChild(el("span", "recent-label", car.l));
+  checkBtn.addEventListener("click", () => {
+    input.value = formatPlate(car.p);
+    runSearch(car.p);
+  });
+  row.appendChild(checkBtn);
+
+  const testChip = myCarTestChip(car.tokef);
+  if (testChip) row.appendChild(testChip);
+
+  const remindDays = daysUntil(car.tokef);
+  if (remindDays != null && remindDays >= 0) {
+    const icsBtn = el("button", "recent-chip mycar-ics", "🗓 תזכורת ליומן");
+    icsBtn.type = "button";
+    icsBtn.addEventListener("click", () => downloadTestReminder(car));
+    row.appendChild(icsBtn);
+  }
+
+  myCarSection.append(head, row);
+}
+
 /* ---------- כרטיס שיתוף — תמונת תמצית ----------
    במקום קישור יבש, שיתוף מפיק תמונת כרטיס (canvas) שנוחתת יפה בוואטסאפ:
    הלוחית הצהובה, שם הדגם, צ'יפי התמצית, תמונת הדגם (אם נטענה), עובדות
@@ -2161,6 +2370,7 @@ async function runSearch(digits) {
         rows: mainRegistryRows(record),
       });
       addRecent(digits, vehicleTitle(record));
+      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
       startEnrichments(record, plateNumber, {
         continuation: true, wltp: true, priceList: true, recalls: true, rarity: true,
         status: { text: "✅ פעיל", tone: "good" },
@@ -2191,6 +2401,7 @@ async function runSearch(digits) {
         rows: fallback.rows(record),
       });
       addRecent(digits, vehicleTitle(record));
+      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
       startEnrichments(record, plateNumber, fallback.enrich, token);
       return;
     }
@@ -2231,6 +2442,30 @@ input.addEventListener("input", () => {
   input.setSelectionRange(pos, pos);
 });
 
+/* הדבקה חכמה: אפשר להדביק טקסט שלם (מודעת יד 2, הודעת וואטסאפ) —
+   מספר הרישוי מחולץ מתוכו והבדיקה רצה מיד. עדיפות למספר בפורמט לוחית
+   (12-345-67); אחרת רצף חשוף של 7-8 ספרות. טלפונים (9-10 ספרות) ומחירים
+   עם פסיקים אינם נתפסים; הכול מקומי, בלי לשלוח את הטקסט לשום מקום */
+function extractPlateFromText(text) {
+  const str = String(text);
+  for (const match of str.matchAll(/(?<!\d)\d{2,3}[-־.]\d{2,3}[-־.]\d{2,3}(?!\d)/g)) {
+    const digits = digitsOnly(match[0]);
+    if (digits.length === 7 || digits.length === 8) return digits;
+  }
+  return /(?<!\d)(\d{7,8})(?!\d)/.exec(str)?.[1] || null;
+}
+
+input.addEventListener("paste", (event) => {
+  const text = event.clipboardData?.getData("text") || "";
+  // מספר נקי (ספרות/מקפים/רווחים בלבד) ממשיך במסלול ההקלדה הרגיל
+  if (!text || /^[\d\s־.-]*$/.test(text)) return;
+  const plate = extractPlateFromText(text);
+  if (!plate) return;
+  event.preventDefault();
+  input.value = formatPlate(plate);
+  runSearch(plate);
+});
+
 // מיקוד בשדה בוחר את כל המספר, כך שהקלדה מחליפה אותו מיד — הזנת מספר
 // חדש בלחיצה אחת ואז הקלדה. rAF כדי לרוץ אחרי מיקום הסמן של הדפדפן
 input.addEventListener("focus", () => {
@@ -2262,6 +2497,7 @@ form.addEventListener("submit", (event) => {
 });
 
 renderRecent();
+renderMyCarPanel();
 
 // כניסה דרך קישור משותף (?plate=) — ממלאים את השדה ומריצים בדיקה אוטומטית
 const initialPlate = digitsOnly(new URLSearchParams(location.search).get("plate") || "");

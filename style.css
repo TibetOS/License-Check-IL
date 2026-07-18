@@ -499,6 +499,54 @@ body {
   border: 1px solid #fecaca;
 }
 
+/* כפתור "מה זה?" — עיגול קטן ליד תוויות של מונחים מקצועיים */
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-inline-start: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.info-btn[aria-expanded="true"] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+/* ההסבר נפתח בתוך תא הערך — טקסט קטן ושורת מקור */
+.row-note {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.row-note-source {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 /* תשובה שלילית מוסמכת ("אין תו נכה") — עובדה שקטה, לא התרעה */
 .chip-muted {
   background: #f4f4f5;
@@ -648,7 +696,8 @@ body {
   font-weight: 600;
 }
 
-#clear-recent {
+#clear-recent,
+.mycar .recent-head button {
   border: none;
   background: none;
   color: var(--muted);
@@ -656,10 +705,38 @@ body {
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
+  font-family: inherit;
 }
 
-#clear-recent:hover {
+#clear-recent:hover,
+.mycar .recent-head button:hover {
   color: var(--text);
+}
+
+/* הרכב שלי — פאנל קבוע במסך הבית עם ספירה לאחור לטסט */
+.mycar {
+  margin-top: 24px;
+}
+
+.mycar.hidden {
+  display: none;
+}
+
+.mycar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mycar-row .chip {
+  margin: 0;
+}
+
+/* כפתור השמירה בכרטיס — במצב שמור הכוכב מוזהב */
+.mycar-btn.mycar-saved {
+  border-color: #fbbf24;
+  background: #fffbeb;
 }
 
 #recent-list {
