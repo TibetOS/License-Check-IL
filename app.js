@@ -49,6 +49,8 @@ const recallBox = document.getElementById("recall-box");
 const recentSection = document.getElementById("recent");
 const recentList = document.getElementById("recent-list");
 const clearRecentBtn = document.getElementById("clear-recent");
+const shareBtn = document.getElementById("share-btn");
+const shareBtnLabel = document.getElementById("share-btn-label");
 
 const MESSAGES = {
   invalid: "מספר רישוי חייב להכיל 2 עד 8 ספרות",
@@ -316,6 +318,7 @@ function renderCard({ plateDigits, title, banner, rows }) {
   for (const [label, value, opts] of rows) {
     appendDetailRow(label, value, opts);
   }
+  resetShareButton(plateDigits);
   resultCard.classList.remove("hidden");
 }
 
@@ -1236,6 +1239,59 @@ clearRecentBtn.addEventListener("click", () => {
   renderRecent();
 });
 
+/* ---------- קישור ישיר ושיתוף ---------- */
+
+// כפתור השיתוף מוצג רק אם אפשר לשתף (Web Share API) או להעתיק ללוח
+const canShare = Boolean(navigator.share || navigator.clipboard?.writeText);
+
+let currentPlateDigits = null;
+let shareFeedbackTimer = null;
+
+function plateUrl(digits) {
+  const url = new URL(location.href);
+  url.searchParams.set("plate", digits);
+  url.hash = "";
+  return url.toString();
+}
+
+// משקף את המספר הנבדק בכתובת הדפדפן, כך שאפשר לשתף גם מסרגל הכתובת
+function reflectPlateInUrl(digits) {
+  try {
+    history.replaceState(null, "", plateUrl(digits));
+  } catch {
+    // replaceState עלול להיחסם בפתיחה ישירה מ-file:// — מוותרים על העדכון
+  }
+}
+
+function resetShareButton(plateDigits) {
+  currentPlateDigits = plateDigits;
+  clearTimeout(shareFeedbackTimer);
+  shareBtn.classList.remove("copied");
+  shareBtnLabel.textContent = "שיתוף קישור";
+  shareBtn.classList.toggle("hidden", !canShare);
+}
+
+shareBtn.addEventListener("click", async () => {
+  if (!currentPlateDigits) return;
+  const url = plateUrl(currentPlateDigits);
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: `פרטי רכב ${formatPlate(currentPlateDigits)}`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    shareBtn.classList.add("copied");
+    shareBtnLabel.textContent = "הקישור הועתק ✓";
+    clearTimeout(shareFeedbackTimer);
+    shareFeedbackTimer = setTimeout(() => {
+      shareBtn.classList.remove("copied");
+      shareBtnLabel.textContent = "שיתוף קישור";
+    }, 2500);
+  } catch {
+    // המשתמש ביטל את חלון השיתוף או שהגישה ללוח נדחתה
+  }
+});
+
 /* ---------- זרימת החיפוש ---------- */
 
 async function runSearch(digits) {
@@ -1243,6 +1299,7 @@ async function runSearch(digits) {
   // המאגר שומר את מספר הרכב כמספר, ולכן מסירים אפסים מובילים
   const plateNumber = parseInt(digits, 10);
 
+  reflectPlateInUrl(digits);
   hideResult();
   showMessage(MESSAGES.loading, "loading");
   submitBtn.disabled = true;
@@ -1355,3 +1412,10 @@ form.addEventListener("submit", (event) => {
 });
 
 renderRecent();
+
+// כניסה דרך קישור משותף (?plate=) — ממלאים את השדה ומריצים בדיקה אוטומטית
+const initialPlate = digitsOnly(new URLSearchParams(location.search).get("plate") || "");
+if (isValidPlate(initialPlate)) {
+  input.value = formatPlate(initialPlate);
+  runSearch(initialPlate);
+}
