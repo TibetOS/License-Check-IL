@@ -27,6 +27,12 @@ let scannerOverlay = null;
 let scannerVideo = null;
 let scannerGuide = null;
 let scannerStatus = null;
+let scannerCloseBtn = null;
+let cameraButton = null;
+
+// קנבס ה-OCR משוחזר בין פריימים — יצירת קנבס חדש לכל פריים גורמת
+// לזבל-זיכרון מיותר, בעיקר בניידים
+let ocrCanvas = null;
 
 // מזהה סשן רץ — סוגר לולאות זיהוי ישנות כשהשכבה נסגרת ונפתחת מחדש
 let scanSession = 0;
@@ -95,7 +101,7 @@ function buildScannerOverlay() {
   scannerVideo.muted = true;
   scannerVideo.autoplay = true;
 
-  const closeBtn = el("button", "scanner-close");
+  const closeBtn = (scannerCloseBtn = el("button", "scanner-close"));
   closeBtn.type = "button";
   closeBtn.setAttribute("aria-label", "סגירת הסורק");
   const closeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -141,9 +147,13 @@ function stopStream() {
 function closeScanner(failureMessage) {
   scanSession += 1;
   stopStream();
+  const wasOpen = Boolean(scannerOverlay?.classList.contains("open"));
   if (scannerOverlay) scannerOverlay.classList.remove("open");
   document.removeEventListener("keydown", onScannerKeydown);
   if (failureMessage) showMessage(failureMessage, "warn");
+  // נגישות: המיקוד חוזר לכפתור שפתח את הדיאלוג (כפתור המצלמה הוא
+  // הדרך היחידה לפתיחה — מיקוד ישיר בו נכון תמיד ואינו פותח מקלדת)
+  if (wasOpen && cameraButton) cameraButton.focus();
 }
 
 async function openScanner() {
@@ -154,6 +164,8 @@ async function openScanner() {
   document.addEventListener("keydown", onScannerKeydown);
   setScannerStatus(SCANNER_MESSAGES.requesting);
   clearMessage();
+  // נגישות: המיקוד עובר אל תוך הדיאלוג — לכפתור הסגירה
+  scannerCloseBtn.focus();
 
   // רכיב הזיהוי נטען במקביל לבקשת המצלמה — כשל בטעינתו מטופל בהמשך,
   // ולכן דוחסים כאן catch ריק כדי שלא תיווצר דחייה לא-מטופלת
@@ -219,7 +231,9 @@ function grabGuideRegion() {
   const sh = guideRect.height / scale;
   if (sw <= 0 || sh <= 0) return null;
 
-  const canvas = document.createElement("canvas");
+  if (!ocrCanvas) ocrCanvas = document.createElement("canvas");
+  const canvas = ocrCanvas;
+  // קביעת המידות מנקה את הקנבס לקראת הפריים החדש
   canvas.width = OCR_CANVAS_WIDTH;
   canvas.height = Math.max(1, Math.round((OCR_CANVAS_WIDTH * sh) / sw));
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -300,11 +314,12 @@ function addCameraButton() {
   const wrap = document.querySelector(".plate-wrap");
   if (!wrap) return;
 
-  const button = el("button", "camera-input");
+  // בניגוד לכפתור הניקוי, הכפתור נשאר במעבר המקלדת (ללא tabindex=-1) —
+  // זו הדרך היחידה להגיע לסורק, ומשתמשי מקלדת וקורא-מסך זקוקים לה
+  const button = (cameraButton = el("button", "camera-input"));
   button.type = "button";
   button.id = "camera-input";
   button.setAttribute("aria-label", "סריקת הלוחית במצלמה");
-  button.tabIndex = -1;
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -328,4 +343,10 @@ function addCameraButton() {
 // זכר לפיצ'ר לא מופיע וההקלדה הידנית נשארת כפי שהיא
 if (navigator.mediaDevices?.getUserMedia) {
   addCameraButton();
+
+  // פרטיות וסוללה: מעבר לרקע (החלפת אפליקציה / מסך כבוי) סוגר את הסורק
+  // ומשחרר את המצלמה מיד
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && activeStream) closeScanner();
+  });
 }

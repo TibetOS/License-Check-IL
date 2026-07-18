@@ -162,6 +162,14 @@ body {
   background: rgba(26, 34, 51, 0.08);
 }
 
+/* הכפתור נגיש במקלדת — טבעת מיקוד ברורה לניווט בטאב בלבד */
+.camera-input:focus-visible {
+  color: #1a2233;
+  background: rgba(26, 34, 51, 0.08);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .camera-input:active {
   background: rgba(26, 34, 51, 0.16);
 }
