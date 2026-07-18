@@ -606,11 +606,20 @@ const FALLBACK_CHAIN = [
     rows: publicTransportRows,
     enrich: {
       wltp: true, priceList: true, recalls: true, busFleet: true,
-      // מאגר הרכב הציבורי כולל גם רשומות מבוטלות — הסטטוס נגזר מהרשומה
-      status: (record) =>
-        record.bitul_nm && !/^לא/.test(String(record.bitul_nm).trim())
-          ? { text: "❌ מבוטל", tone: "bad" }
-          : { text: "✅ פעיל", tone: "good" },
+      // מאגר הרכב הציבורי כולל גם רשומות מבוטלות — הסטטוס נגזר מהרשומה.
+      // ההכרעה לפי bitul_cd ('0' = לא מבוטל); הטקסט מוצג מ-bitul_nm.
+      // ערכים בפועל (נדגמו מול המאגר): הפקדה/הפקדת סוחר/הורדה מהכביש הם
+      // ירידה זמנית מהכביש (כתום), והשאר ביטול של ממש (אדום)
+      status: (record) => {
+        const code = String(record.bitul_cd ?? "").trim();
+        const reason = String(record.bitul_nm || "").trim();
+        const active = code ? code === "0" : (!reason || /^(לא|ללא)/.test(reason));
+        if (active) return { text: "✅ פעיל", tone: "good" };
+        if (["C", "S", "B"].includes(code)) {
+          return { text: `⚠️ ${reason || "ירד מהכביש"}`, tone: "warn" };
+        }
+        return { text: `❌ ${reason || "מבוטל"}`, tone: "bad" };
+      },
     },
   },
   {
