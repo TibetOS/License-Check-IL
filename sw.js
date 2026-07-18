@@ -43,10 +43,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // עותק טרי נשמר במטמון לשימוש הבא ללא רשת
+        // עותק טרי נשמר במטמון לשימוש הבא ללא רשת. waitUntil מאריך את חיי
+        // ה-SW עד שהכתיבה מסתיימת — בלעדיו הדפדפן רשאי לסיים את התהליך
+        // מיד אחרי מסירת התשובה והכתיבה עלולה ללכת לאיבוד
         if (response.ok) {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
         }
         return response;
       })
