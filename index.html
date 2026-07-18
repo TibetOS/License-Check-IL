@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="בדיקת פרטי רכב לפי מספר לוחית רישוי, ישירות ממאגר משרד התחבורה (data.gov.il)">
-  <title>בדיקת רכב לפי מספר רישוי</title>
+  <meta name="description" content="בדיקת פרטי כלי רכב לפי מספר לוחית רישוי — רכב פרטי, אופנועים, משאיות, אוטובוסים וצמ&quot;ה — ישירות ממאגרי משרד התחבורה (data.gov.il)">
+  <title>בדיקת כלי רכב לפי מספר רישוי</title>
   <meta name="theme-color" content="#ffd320">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -17,8 +17,8 @@
 <body>
   <main class="container">
     <header class="header">
-      <h1>🚗 בדיקת רכב</h1>
-      <p class="subtitle">הזינו מספר לוחית רישוי וקבלו את פרטי הרכב ממאגר משרד התחבורה</p>
+      <h1>🚗 בדיקת כלי רכב</h1>
+      <p class="subtitle">הזינו מספר לוחית רישוי וקבלו את הפרטים ממאגרי משרד התחבורה — רכב פרטי, אופנועים, משאיות, אוטובוסים וגם צמ"ה</p>
     </header>
 
     <form id="search-form" novalidate>
@@ -47,6 +47,7 @@
       <div class="card-header">
         <span id="result-plate" class="plate-badge" dir="ltr"></span>
         <h2 id="result-title"></h2>
+        <p id="result-subtitle" class="result-subtitle hidden"></p>
         <button type="button" id="share-btn" class="share-btn hidden">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="18" cy="5" r="2.5"/>
@@ -57,6 +58,11 @@
           <span id="share-btn-label">שיתוף קישור</span>
         </button>
       </div>
+      <figure id="vehicle-image" class="vehicle-image hidden">
+        <a target="_blank" rel="noopener"><img alt=""></a>
+        <figcaption>תמונה להמחשה בלבד · מתוך ויקיפדיה</figcaption>
+      </figure>
+      <div id="verdict-box" class="verdict hidden" aria-label="תמצית הבדיקה"></div>
       <dl id="result-details" class="details"></dl>
       <div id="history-box" class="history hidden" aria-label="היסטוריית הרכב"></div>
       <div id="indicator-box" class="indicators hidden" aria-label="חיווים נוספים"></div>

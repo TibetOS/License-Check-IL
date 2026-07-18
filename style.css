@@ -314,6 +314,13 @@ body {
   border: 1px solid #fecaca;
 }
 
+/* התוקף מסתיים בתוך 30 יום — כתום, בין "בתוקף" ל"פג תוקף" */
+.badge-expiring {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
 /* היסטוריית הרכב */
 
 .history {
@@ -447,6 +454,12 @@ body {
   background: #ecfdf5;
   color: #047857;
   border: 1px solid #a7f3d0;
+}
+
+.chip-bad {
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid #fecaca;
 }
 
 .indicators {
@@ -684,6 +697,61 @@ body {
   font-size: 1.25rem;
 }
 
+/* שורת הסיפור — גיל ובעלות במשפט מעומעם מתחת לכותרת */
+.result-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.result-subtitle.hidden {
+  display: none;
+}
+
+/* תמונת הדגם — להמחשה בלבד, מוצגת רק אחרי טעינה מוצלחת */
+.vehicle-image {
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.vehicle-image.hidden {
+  display: none;
+}
+
+.vehicle-image a {
+  display: inline-block;
+}
+
+.vehicle-image img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.vehicle-image figcaption {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* שורת התמצית — צ'יפי טסט / ריקולים / יד מתחת לכותרת הכרטיס */
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.verdict.hidden {
+  display: none;
+}
+
+.verdict .chip {
+  margin: 0;
+}
+
 .share-btn {
   display: inline-flex;
   align-items: center;
@@ -732,6 +800,45 @@ body {
   gap: 10px 16px;
 }
 
+/* שלד טעינה — פס מהבהב במקום תוכן שבדרך. משמש בשורת "פרטים נוספים",
+   בהיסטוריה ובבדיקת הריקולים, ותמיד מוסר כשהתשובה מגיעה */
+.skeleton {
+  display: inline-block;
+  width: 110px;
+  max-width: 100%;
+  height: 0.85em;
+  vertical-align: middle;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s linear infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: #e5e7eb;
+  }
+}
+
+.details .enrich-pending {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.history-loading .skeleton {
+  width: 170px;
+}
+
+.recall .recall-checking {
+  margin: 0;
+}
+
 .details dt {
   color: var(--muted);
   font-size: 0.9rem;
@@ -751,6 +858,9 @@ body {
   z-index: 1000;
   display: none;
   background: #000;
+  /* זום דיגיטלי מגדיל את הווידאו מעבר למסך; צביטה שייכת לזום הסורק */
+  overflow: hidden;
+  touch-action: none;
 }
 
 .scanner-overlay.open {
@@ -763,6 +873,8 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* זום דיגיטלי — הגדלה סביב המרכז, היכן שהמסגרת ממוקמת */
+  transform-origin: center center;
 }
 
 .scanner-close {
@@ -797,26 +909,115 @@ body {
   stroke-linecap: round;
 }
 
+/* המסגרת ממורכזת אבסולוטית והמשוב (רצועת קריאה + סטטוס) ממוקם מתחתיה
+   בנפרד — כך שינויי תוכן במשוב לעולם לא מזיזים את המסגרת (שממנה נגזר
+   אזור החיתוך של ה-OCR) */
 .scanner-frame {
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
   pointer-events: none;
 }
 
+.scanner-frame .scanner-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.scanner-feedback {
+  position: absolute;
+  top: calc(50% + min(86vw, 500px) / 4.7 / 2 + 14px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
 /* מסגרת בצורת לוחית — צהוב-לוחית, יחס ~4.7:1. הצללית האינסופית מסביב
-   מחשיכה את שאר התמונה וממקדת את העין (והמצלמה) בלוחית */
+   מחשיכה את שאר התמונה וממקדת את העין (והמצלמה) בלוחית.
+   צבע המסגרת משקף את מצב הזיהוי: צהוב = סורק, כתום = מועמד ממתין
+   לאימות, ירוק = אומת */
 .scanner-guide {
   width: min(86vw, 500px);
   aspect-ratio: 4.7 / 1;
   border: 3px solid var(--plate-yellow);
   border-radius: 8px;
   box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.45);
+  transition: border-color 0.15s ease;
+}
+
+.scanner-guide.candidate {
+  border-color: #fb923c;
+}
+
+.scanner-guide.locked {
+  border-color: #22c55e;
+}
+
+/* רצועת הקריאה החיה — הספרות שהזיהוי קורא כרגע, בסגנון לוחית */
+.scanner-reading {
+  padding: 2px 16px;
+  border-radius: 6px;
+  background: var(--plate-yellow);
+  border: 2px solid #1a2233;
+  color: #1a2233;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* קריאה חלקית — עדיין לא לוחית מלאה, מוצגת מעומעמת */
+.scanner-reading.partial {
+  opacity: 0.55;
+}
+
+/* אומת — הרצועה מוריקה יחד עם המסגרת */
+.scanner-reading.locked {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #14532d;
+}
+
+/* כפתור פנס — מוצג רק כשהמצלמה תומכת, בפינה שמול כפתור הסגירה */
+.scanner-torch {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  inset-inline-end: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-torch:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+/* הפנס דולק — הכפתור מתהפך לבהיר */
+.scanner-torch.on {
+  background: #fff;
+  color: #1a2233;
+}
+
+.scanner-torch svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  stroke: none;
 }
 
 .scanner-status {
@@ -827,6 +1028,126 @@ body {
   color: #fff;
   font-size: 0.95rem;
   text-align: center;
+}
+
+/* סרגל תחתון: כפתורי זום + העלאת תמונה */
+.scanner-controls {
+  position: absolute;
+  bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.scanner-zoom {
+  display: flex;
+  gap: 6px;
+}
+
+.scanner-zoom-btn {
+  min-width: 42px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-zoom-btn.active {
+  background: #fff;
+  color: #1a2233;
+}
+
+.scanner-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-upload:hover,
+.scanner-zoom-btn:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.scanner-upload:hover {
+  color: #fff;
+}
+
+.scanner-upload svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* בחירת מועמד מתוך תמונה — פאנל מרכזי מעל הסרגל התחתון */
+.scanner-candidates {
+  position: absolute;
+  bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+  left: 16px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.scanner-candidates-label {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.scanner-candidate {
+  padding: 4px 18px;
+  border: 2px solid #1a2233;
+  border-radius: 6px;
+  background: var(--plate-yellow);
+  color: #1a2233;
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-candidate-dismiss {
+  margin-top: 2px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .scanner-privacy {

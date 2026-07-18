@@ -40,6 +40,9 @@ const resultCard = document.getElementById("result");
 const resultBanner = document.getElementById("result-banner");
 const resultPlate = document.getElementById("result-plate");
 const resultTitle = document.getElementById("result-title");
+const resultSubtitle = document.getElementById("result-subtitle");
+const vehicleImageBox = document.getElementById("vehicle-image");
+const verdictBox = document.getElementById("verdict-box");
 const resultDetails = document.getElementById("result-details");
 const historyBox = document.getElementById("history-box");
 const indicatorBox = document.getElementById("indicator-box");
@@ -140,6 +143,9 @@ function yesOnly(value) {
 // ממוצע נסועה שנתי מוערך: מד האוץ בטסט האחרון חלקי הוותק מהרישום הראשון.
 // הערכה בלבד (מד האוץ נכון לתאריך הטסט, לא להיום) — מסומן "~" בתצוגה.
 // רכב צעיר מחצי שנה מוחזר null כדי לא להציג ממוצע לא-אמין
+// ממוצע נסועה שנתי ארצי משוער (ק"מ) — בסיס להשוואת "נמוך/גבוה מהממוצע"
+const NATIONAL_AVG_KM_PER_YEAR = 15000;
+
 function annualMileage(kmValue, firstRegDate) {
   const km = Number(kmValue);
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(firstRegDate || ""));
@@ -198,16 +204,25 @@ function formatPrice(value) {
   return `₪${num.toLocaleString("he-IL")}`;
 }
 
-// תג "בתוקף" / "פג תוקף" לפי תאריך ISO
+// סף "מסתיים בקרוב" לתוקף רישיון הרכב (ימים)
+const EXPIRY_SOON_DAYS = 30;
+
+// תג תוקף לפי תאריך ISO: "בתוקף" / "פג תוקף", וכשהתוקף מסתיים בתוך
+// 30 יום — תג כתום עם ספירת הימים שנותרו
 function validityBadge(isoDate) {
   if (!isoDate) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate));
   if (!match) return null;
   const today = new Date();
-  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  return match[0] >= todayIso
-    ? { text: "בתוקף", tone: "valid" }
-    : { text: "פג תוקף", tone: "expired" };
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const expiry = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const days = Math.round((expiry - startOfToday) / 86400000);
+  if (days < 0) return { text: "פג תוקף", tone: "expired" };
+  if (days === 0) return { text: "מסתיים היום", tone: "expiring" };
+  if (days <= EXPIRY_SOON_DAYS) {
+    return { text: days === 1 ? "עוד יום" : `עוד ${days} ימים`, tone: "expiring" };
+  }
+  return { text: "בתוקף", tone: "valid" };
 }
 
 async function ckanSearch(resourceId, filters, limit = 1) {
@@ -284,6 +299,14 @@ function hideResult() {
   resultCard.classList.add("hidden");
   resultBanner.classList.add("hidden");
   resultDetails.replaceChildren();
+  verdictBox.classList.add("hidden");
+  verdictBox.replaceChildren();
+  resultSubtitle.classList.add("hidden");
+  resultSubtitle.textContent = "";
+  const vehicleImg = vehicleImageBox.querySelector("img");
+  vehicleImg.onload = null;
+  vehicleImg.removeAttribute("src");
+  vehicleImageBox.classList.add("hidden");
   for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
@@ -639,6 +662,167 @@ const FALLBACK_CHAIN = [
   },
 ];
 
+/* ---------- תמונת הדגם (ויקיפדיה) ----------
+   תמונה מייצגת של הדגם מוויקיפדיה האנגלית — API חופשי, ללא מפתח, תומך
+   CORS. פרטיות: לוויקיפדיה נשלח שם הדגם בלבד, לעולם לא מספר הרישוי.
+   התמונה להמחשה בלבד (עשויה להציג דור/צבע אחרים) ומסומנת ככזו.
+   כל כשל או ספק = פשוט אין תמונה — לעולם לא תמונה שגויה */
+
+const WIKI_API = "https://en.wikipedia.org/w/api.php";
+
+// מילון יצרנים עברית→אנגלית לפי האיות בפועל במאגר (שדה tozeret_nm מתחיל
+// בשם היצרן ואחריו ארץ ייצור). ההתאמה לפי הקידומת הארוכה ביותר
+const MAKER_EN = {
+  "אאודי": "Audi", "אודי": "Audi", "אופל": "Opel", "איווקו": "Iveco",
+  "איסוזו": "Isuzu", "אינפיניטי": "Infiniti", "אלפא רומיאו": "Alfa Romeo",
+  "אסטון מרטין": "Aston Martin", "אקספנג": "XPeng", "אומודה": "Omoda",
+  "ב מ וו": "BMW", "בי ווי די": "BYD", "ביואיק": "Buick", "בנטלי": "Bentley",
+  "ג'יפ": "Jeep", "גיפ": "Jeep", "גילי": "Geely", "גרייט וול": "Great Wall",
+  "דאציה": "Dacia", "דודג'": "Dodge", "דונגפנג": "Dongfeng", "דייהטסו": "Daihatsu",
+  "הונדה": "Honda", "וולבו": "Volvo", "זיקר": "Zeekr", "טויוטה": "Toyota",
+  "טסלה": "Tesla", "יגואר": "Jaguar", "יונדאי": "Hyundai", "לוטוס": "Lotus",
+  "לינק אנד קו": "Lynk & Co", "לינקולן": "Lincoln", "ליפמוטור": "Leapmotor",
+  "למבורגיני": "Lamborghini", "לנדרובר": "Land Rover", "לקסוס": "Lexus",
+  "מ.ג": "MG", "מאן": "MAN", "מזארטי": "Maserati", "מזדה": "Mazda",
+  "מיני": "Mini", "מיצובישי": "Mitsubishi", "מקלארין": "McLaren",
+  "מקסוס": "Maxus", "מרצדס": "Mercedes-Benz", "ניאו": "NIO", "ניסאן": "Nissan",
+  "סאאב": "Saab", "סאנגיונג": "SsangYong", "סובארו": "Subaru", "סוזוקי": "Suzuki",
+  "סיאט": "SEAT", "סיטרואן": "Citroen", "סמארט": "Smart", "סקודה": "Skoda",
+  "פולסטאר": "Polestar", "פולקסווגן": "Volkswagen", "פורד": "Ford",
+  "פורשה": "Porsche", "פיאג'ו": "Piaggio", "פיאט": "Fiat", "פיג'ו": "Peugeot",
+  "פיגו": "Peugeot", "פרארי": "Ferrari", "צ'רי": "Chery", "קאדילאק": "Cadillac",
+  "קופרה": "Cupra", "קיה": "Kia", "קרייזלר": "Chrysler", "רובר": "Rover",
+  "רולס-רויס": "Rolls-Royce", "רנו": "Renault", "שברולט": "Chevrolet",
+};
+
+function makerEnglish(tozeretNm) {
+  const name = String(tozeretNm || "").trim();
+  let best = null;
+  for (const [he, en] of Object.entries(MAKER_EN)) {
+    if (name.startsWith(he) && (!best || he.length > best.length)) {
+      best = he;
+    }
+  }
+  return best ? MAKER_EN[best] : null;
+}
+
+// נירמול להשוואת כותרות: הסרת ניקוד/סימנים (Škoda → skoda) והשארת
+// אותיות וספרות לטיניות בלבד
+function normalizeForMatch(text) {
+  return String(text)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function showVehicleImage(src, title, articleUrl) {
+  const img = vehicleImageBox.querySelector("img");
+  const link = vehicleImageBox.querySelector("a");
+  // התמונה נחשפת רק אחרי שנטענה בפועל — בלי מסגרת ריקה או אייקון שבור
+  img.onload = () => vehicleImageBox.classList.remove("hidden");
+  img.alt = `תמונה להמחשה: ${title}`;
+  if (articleUrl) link.href = articleUrl;
+  img.src = src;
+}
+
+async function fetchVehicleImage(record, guard) {
+  const kinuy = String(record.kinuy_mishari || "").trim();
+  const make = makerEnglish(record.tozeret_nm);
+  const normKinuy = normalizeForMatch(kinuy);
+  if (!normKinuy) return;
+  // בלי יצרן מזוהה — שאילתה רק כשהכינוי ייחודי דיו (לא "3" וכד')
+  if (!make && normKinuy.length < 4) return;
+
+  const params = new URLSearchParams({
+    action: "query",
+    generator: "search",
+    gsrsearch: make ? `${make} ${kinuy}` : kinuy,
+    gsrlimit: "1",
+    prop: "pageimages|info",
+    piprop: "thumbnail",
+    pithumbsize: "480",
+    inprop: "url",
+    format: "json",
+    origin: "*",
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${WIKI_API}?${params}`, { signal: controller.signal });
+    if (!response.ok) return;
+    const data = await response.json();
+    const page = Object.values(data?.query?.pages || {})[0];
+    if (!page?.thumbnail?.source) return;
+    // שומר בטיחות: כותרת הערך חייבת להכיל את שם הדגם (ואת היצרן, כשידוע) —
+    // אחרת התוצאה היא כנראה ערך היצרן או ערך לא קשור, ועדיף בלי תמונה
+    const normTitle = normalizeForMatch(page.title);
+    if (!normTitle.includes(normKinuy)) return;
+    if (make && !normTitle.includes(normalizeForMatch(make))) return;
+    guard(() => showVehicleImage(page.thumbnail.source, page.title, page.fullurl))();
+  } catch {
+    // אין רשת / חריגה מהזמן — פשוט בלי תמונה
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ---------- שורת התמצית (צ'יפים מתחת לכותרת) ----------
+   תשובה במבט אחד לשלוש השאלות שכל קונה שואל: טסט, ריקולים, יד.
+   כמו החיווים — משבצות מוסתרות בסדר קבוע, כל תשובה ממלאת את שלה;
+   כשל משאיר את הצ'יפ מוסתר ולעולם אינו מוצג כ"אין" */
+
+const VERDICT_KEYS = ["test", "recall", "hands"];
+
+function prepareVerdictBox() {
+  verdictBox.replaceChildren();
+  verdictBox.classList.add("hidden");
+  for (const key of VERDICT_KEYS) {
+    const chip = el("span", "chip");
+    chip.dataset.verdict = key;
+    chip.hidden = true;
+    verdictBox.appendChild(chip);
+  }
+}
+
+function fillVerdict(key, text, tone) {
+  const chip = verdictBox.querySelector(`[data-verdict="${key}"]`);
+  if (!chip) return;
+  chip.className = `chip chip-${tone}`;
+  chip.textContent = text;
+  chip.hidden = false;
+  verdictBox.classList.remove("hidden");
+}
+
+// צ'יפ הטסט נגזר ישירות מהרשומה (סינכרוני) — אותו חישוב כמו התג בשורה
+function fillTestVerdict(record) {
+  const badge = validityBadge(record.tokef_dt);
+  if (!badge) return;
+  if (badge.tone === "valid") {
+    fillVerdict("test", "✅ טסט בתוקף", "good");
+  } else if (badge.tone === "expiring") {
+    fillVerdict("test", `⚠️ הטסט מסתיים בקרוב (${badge.text})`, "warn");
+  } else {
+    fillVerdict("test", "❌ הטסט פג תוקף", "bad");
+  }
+}
+
+// שורת סיפור קצרה מתחת לכותרת: גיל הרכב וסוג הבעלות במשפט אחד
+function renderStory(record) {
+  const parts = [];
+  const year = Number(record.shnat_yitzur);
+  if (Number.isFinite(year) && year > 1900) {
+    const age = new Date().getFullYear() - year;
+    if (age <= 0) parts.push(`שנת ${year}`);
+    else if (age === 1) parts.push("בן שנה");
+    else parts.push(`בן ${age} שנים`);
+  }
+  if (record.baalut) parts.push(`בעלות: ${record.baalut}`);
+  if (!parts.length) return;
+  resultSubtitle.textContent = parts.join(" · ");
+  resultSubtitle.classList.remove("hidden");
+}
+
 /* ---------- העשרות (בקשות מקבילות אחרי מציאת הרכב) ---------- */
 
 // דגלי מערכות הבטיחות בטבלת הדגמים (ערך 1 = מותקן)
@@ -689,16 +873,22 @@ const HISTORY_FLAGS = [
 ];
 
 // שלד הסעיף נבנה מראש עם משבצות מוסתרות בסדר קבוע — שתי הבקשות
-// (רשומת היסטוריה והחלפות בעלות) ממלאות כל אחת את המשבצת שלה
+// (רשומת היסטוריה והחלפות בעלות) ממלאות כל אחת את המשבצת שלה.
+// הסעיף מוצג מיד עם משבצת-שלד מהבהבת, כדי שהמשתמש יראה שהבדיקה רצה;
+// כשהתשובות מגיעות השלד מוסר, ואם אין שום תוכן הסעיף כולו נעלם
 function prepareHistoryBox() {
   historyBox.replaceChildren(el("strong", null, "היסטוריית הרכב"));
-  historyBox.classList.add("hidden");
   for (const key of ["km", "facts", "flags", "owners", "nodata"]) {
     const slot = el("div", `history-slot history-${key}`);
     slot.dataset.history = key;
     slot.hidden = true;
     historyBox.appendChild(slot);
   }
+  const loading = el("div", "history-slot history-loading");
+  loading.dataset.history = "loading";
+  loading.appendChild(el("span", "skeleton"));
+  historyBox.appendChild(loading);
+  historyBox.classList.remove("hidden");
 }
 
 function showHistorySlot(key) {
@@ -719,7 +909,11 @@ function renderVehicleHistory(record) {
     );
     const perYear = annualMileage(record.kilometer_test_aharon, record.rishum_rishon_dt);
     if (perYear) {
-      slot.append(el("span", "history-km-sub", `ממוצע ~${perYear.toLocaleString("he-IL")} ק"מ לשנה`));
+      // השוואה לממוצע הנסועה הארצי — ±20% נחשב "סביב הממוצע"
+      let comparison = "סביב הממוצע הארצי";
+      if (perYear < NATIONAL_AVG_KM_PER_YEAR * 0.8) comparison = "נמוך מהממוצע הארצי";
+      else if (perYear > NATIONAL_AVG_KM_PER_YEAR * 1.2) comparison = "גבוה מהממוצע הארצי";
+      slot.append(el("span", "history-km-sub", `ממוצע ~${perYear.toLocaleString("he-IL")} ק"מ לשנה · ${comparison}`));
     }
   }
 
@@ -758,6 +952,7 @@ function renderHistoryNoData() {
 function renderOwnershipHistory(records) {
   if (!records.length) return;
   const sorted = [...records].sort((a, b) => Number(a.baalut_dt) - Number(b.baalut_dt));
+  fillVerdict("hands", `יד ${sorted.length}`, "info");
 
   const head = el("div", "history-owners-head");
   head.append(el("span", null, "החלפות בעלות"), el("span", "hand-badge", `יד ${sorted.length}`));
@@ -836,6 +1031,17 @@ function renderPermitNone() {
   permitBox.classList.add("permit-none");
   permitBox.replaceChildren(el("p", null, "אין תו חניה לנכה רשום לרכב זה"));
   permitBox.classList.remove("hidden");
+}
+
+// מצב ביניים בזמן שבדיקת הריקולים רצה — מוחלף תמיד באחת משלוש
+// התוצאות (יש ריקול / אין / הבדיקה נכשלה), ולכן לעולם אינו נתקע
+function renderRecallsChecking() {
+  recallBox.classList.remove("recall-ok");
+  recallBox.classList.add("recall-unavailable");
+  const line = el("p", "recall-checking", "בודק קריאות ריקול פתוחות ");
+  line.appendChild(el("span", "skeleton"));
+  recallBox.replaceChildren(line);
+  recallBox.classList.remove("hidden");
 }
 
 function renderRecalls(recalls) {
@@ -1059,18 +1265,31 @@ function startPlateKeyedEnrichments(plateNumber, guard, ignore) {
     historyEmptyCount += 1;
     if (historyEmptyCount === 2) renderHistoryNoData();
   };
+  // שלד הטעינה מוסר כששתי הבקשות הסתיימו (בהצלחה או בכשל); אם לא נותר
+  // שום תוכן גלוי — הסעיף כולו מוסתר (כשל אינו מוצג כ"אין נתונים")
+  let historySettled = 0;
+  const settleHistory = () => {
+    historySettled += 1;
+    if (historySettled < 2) return;
+    historyBox.querySelector('[data-history="loading"]')?.remove();
+    if (!historyBox.querySelector(".history-slot:not([hidden])")) {
+      historyBox.classList.add("hidden");
+    }
+  };
   ckanSearch(RESOURCES.vehicleHistory, { mispar_rechev: plateNumber })
     .then(guard((records) => {
       if (records[0]) renderVehicleHistory(records[0]);
       else noteHistoryEmpty();
     }))
-    .catch(ignore);
+    .catch(ignore)
+    .finally(guard(settleHistory));
   ckanSearch(RESOURCES.ownershipHistory, { mispar_rechev: plateNumber }, 20)
     .then(guard((records) => {
       if (records.length) renderOwnershipHistory(records);
       else noteHistoryEmpty();
     }))
-    .catch(ignore);
+    .catch(ignore)
+    .finally(guard(settleHistory));
 
   // חיווים נקודתיים — נבדקים לכל רכב שנמצא, מוצגים רק בהתאמה
   prepareIndicatorBox();
@@ -1101,6 +1320,13 @@ function startEnrichments(record, plateNumber, options, token) {
   // כלי צמ"ה מגיע עם plateKeyed=false — מספרו (mispar_tzama) אינו מספר רישוי
   const plateKeyed = options.plateKeyed !== false;
 
+  // שורת התמצית והסיפור נבנות מיד מהרשומה; צ'יפי ריקול ויד יתמלאו
+  // כשהתשובות שלהם יגיעו
+  prepareVerdictBox();
+  fillTestVerdict(record);
+  renderStory(record);
+  fetchVehicleImage(record, guard);
+
   const joinFilters = modelJoinFilters(record);
   const wantWltp = options.wltp && joinFilters;
   const wantPrice = options.priceList && joinFilters;
@@ -1109,12 +1335,31 @@ function startEnrichments(record, plateNumber, options, token) {
   if (wantWltp) addPlaceholderRows("wltp", WLTP_ROWS);
   if (wantPrice) addPlaceholderRows("price", PRICE_ROWS);
 
+  // שורת-שלד "פרטים נוספים" בתחתית הטבלה כל עוד בקשות ההעשרה של
+  // השורות רצות — מוסרת כשכולן הסתיימו (בהצלחה או בכשל)
+  let pendingDetailFetches =
+    [options.continuation, wantWltp, wantPrice, options.busFleet, options.constructionPollution]
+      .filter(Boolean).length;
+  if (pendingDetailFetches) {
+    const dt = el("dt", "enrich-pending", "פרטים נוספים");
+    const dd = el("dd", "enrich-pending");
+    dd.appendChild(el("span", "skeleton"));
+    dt.dataset.pending = dd.dataset.pending = "1";
+    resultDetails.append(dt, dd);
+  }
+  const settleDetailFetch = () => {
+    pendingDetailFetches -= 1;
+    if (pendingDetailFetches > 0) return;
+    for (const node of resultDetails.querySelectorAll('[data-pending="1"]')) node.remove();
+  };
+
   if (options.continuation) {
     ckanSearch(RESOURCES.continuation, { mispar_rechev: plateNumber })
       .then(guard((records) => {
         if (records[0]) fillPlaceholderRows("continuation", CONTINUATION_ROWS, records[0]);
       }))
-      .catch(ignore);
+      .catch(ignore)
+      .finally(guard(settleDetailFetch));
   }
 
   if (wantWltp) {
@@ -1124,7 +1369,8 @@ function startEnrichments(record, plateNumber, options, token) {
         fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
         renderSafetyEquipment(records[0]);
       }))
-      .catch(ignore);
+      .catch(ignore)
+      .finally(guard(settleDetailFetch));
   }
 
   if (wantPrice) {
@@ -1132,7 +1378,8 @@ function startEnrichments(record, plateNumber, options, token) {
       .then(guard((records) => {
         if (records[0]) fillPlaceholderRows("price", PRICE_ROWS, records[0]);
       }))
-      .catch(ignore);
+      .catch(ignore)
+      .finally(guard(settleDetailFetch));
   }
 
   // נפוצות הדגם — כמה כאלה רשומים במאגר הפעיל (שתי ספירות: שנה + כל השנים).
@@ -1153,7 +1400,8 @@ function startEnrichments(record, plateNumber, options, token) {
       .then(guard((records) => {
         if (records[0]) fillPlaceholderRows("bus", BUS_ROWS, records[0]);
       }))
-      .catch(ignore);
+      .catch(ignore)
+      .finally(guard(settleDetailFetch));
   }
 
   // דרגת זיהום ואישור פעילות לכלי צמ"ה (מפתח mispar_tzama = plateNumber)
@@ -1163,7 +1411,8 @@ function startEnrichments(record, plateNumber, options, token) {
       .then(guard((records) => {
         if (records[0]) fillPlaceholderRows("tzamapoll", TZAMA_POLLUTION_ROWS, records[0]);
       }))
-      .catch(ignore);
+      .catch(ignore)
+      .finally(guard(settleDetailFetch));
   }
 
   // העשרות לפי מספר רישוי (היסטוריה, חיווים נקודתיים, תו חניה) — רק כאשר
@@ -1176,13 +1425,20 @@ function startEnrichments(record, plateNumber, options, token) {
     // אחרי מציאת ריקולים נשלפים פרטי התיקון לפי RECALL_ID (מסנן-מערך = OR).
     // תשובה ריקה = "אין ריקולים פתוחים" מפורש; כשל = "לא ניתן לבדוק" —
     // לעולם לא מסיקים "אין" מתוך שגיאה
+    renderRecallsChecking();
     ckanSearch(RESOURCES.recalls, { MISPAR_RECHEV: plateNumber }, 10)
       .then(guard((records) => {
         if (!records.length) {
           renderRecallsAllClear();
+          fillVerdict("recall", "✅ אין ריקולים פתוחים", "good");
           return;
         }
         renderRecalls(records);
+        fillVerdict(
+          "recall",
+          records.length === 1 ? "⚠️ ריקול פתוח" : `⚠️ ${records.length} ריקולים פתוחים`,
+          "warn",
+        );
         const recallIds = [...new Set(records.map((r) => r.RECALL_ID).filter((id) => id != null))];
         if (!recallIds.length) return;
         ckanSearch(RESOURCES.recallDetails, { RECALL_ID: recallIds }, recallIds.length)
