@@ -1,6 +1,6 @@
 # License-Check-IL 🚗
 
-בדיקת פרטי רכב לפי מספר לוחית רישוי — ישירות ממאגר כלי הרכב של משרד התחבורה ב-[data.gov.il](https://data.gov.il/dataset/private-and-commercial-vehicles).
+בדיקת פרטי כלי רכב לפי מספר לוחית רישוי — רכב פרטי, אופנועים, משאיות, אוטובוסים וצמ"ה — ישירות ממאגרי כלי הרכב של משרד התחבורה ב-[data.gov.il](https://data.gov.il/dataset/private-and-commercial-vehicles).
 
 אפליקציית עמוד יחיד (HTML/CSS/JS בלבד), ללא שרת: השאילתות נשלחות מהדפדפן ישירות ל-API הציבורי של data.gov.il.
 
