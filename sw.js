@@ -9,7 +9,7 @@
 // שם המטמון כולל את ה-scope: אתר ה-staging (‎/staging/‎) חי באותו origin,
 // ובלי ההפרדה שני ה-workers היו מוחקים זה לזה את המטמון בכל עדכון גרסה
 const CACHE_PREFIX = "lci-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v10::${self.registration.scope}`;
+const CACHE_NAME = `${CACHE_PREFIX}v11::${self.registration.scope}`;
 
 const SHELL_ASSETS = [
   "./",

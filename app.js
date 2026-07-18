@@ -42,7 +42,6 @@ const resultPlate = document.getElementById("result-plate");
 const resultTitle = document.getElementById("result-title");
 const resultSubtitle = document.getElementById("result-subtitle");
 const vehicleImageBox = document.getElementById("vehicle-image");
-const verdictBox = document.getElementById("verdict-box");
 const resultDetails = document.getElementById("result-details");
 const timelineBox = document.getElementById("timeline-box");
 const historyBox = document.getElementById("history-box");
@@ -310,8 +309,6 @@ function hideResult() {
   myCarCandidate = null;
   myCarBtn.classList.add("hidden");
   resultDetails.replaceChildren();
-  verdictBox.classList.add("hidden");
-  verdictBox.replaceChildren();
   resultSubtitle.classList.add("hidden");
   resultSubtitle.textContent = "";
   const vehicleImg = vehicleImageBox.querySelector("img");
@@ -635,7 +632,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הלא פעילים של משרד התחבורה",
     },
     rows: mainRegistryRows,
-    enrich: { wltp: true, priceList: true, recalls: true, status: { text: "⚠️ ירד מהכביש", tone: "warn" } },
+    enrich: { wltp: true, priceList: true, recalls: true },
   },
   {
     resourceId: RESOURCES.motorcycles,
@@ -645,7 +642,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר האופנועים והקטנועים",
     },
     rows: motorcycleRows,
-    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
+    enrich: { recalls: true },
   },
   {
     resourceId: RESOURCES.personalImport,
@@ -655,7 +652,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב נרשם בישראל בהליך של יבוא אישי",
     },
     rows: personalImportRows,
-    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
+    enrich: { recalls: true },
   },
   {
     resourceId: RESOURCES.publicTransport,
@@ -665,23 +662,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הציבוריים (אוטובוסים ומוניות)",
     },
     rows: publicTransportRows,
-    enrich: {
-      wltp: true, priceList: true, recalls: true, busFleet: true,
-      // מאגר הרכב הציבורי כולל גם רשומות מבוטלות — הסטטוס נגזר מהרשומה.
-      // ההכרעה לפי bitul_cd ('0' = לא מבוטל); הטקסט מוצג מ-bitul_nm.
-      // ערכים בפועל (נדגמו מול המאגר): הפקדה/הפקדת סוחר/הורדה מהכביש הם
-      // ירידה זמנית מהכביש (כתום), והשאר ביטול של ממש (אדום)
-      status: (record) => {
-        const code = String(record.bitul_cd ?? "").trim();
-        const reason = String(record.bitul_nm || "").trim();
-        const active = code ? code === "0" : (!reason || /^(לא|ללא)/.test(reason));
-        if (active) return { text: "✅ פעיל", tone: "good" };
-        if (["C", "S", "B"].includes(code)) {
-          return { text: `⚠️ ${reason || "ירד מהכביש"}`, tone: "warn" };
-        }
-        return { text: `❌ ${reason || "מבוטל"}`, tone: "bad" };
-      },
-    },
+    enrich: { wltp: true, priceList: true, recalls: true, busFleet: true },
   },
   {
     resourceId: RESOURCES.heavyTrucks,
@@ -691,27 +672,27 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב שמעל 3.5 טון (משאיות ורכבי אספנות ותיקים)",
     },
     rows: heavyTruckRows,
-    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
+    enrich: { recalls: true },
   },
   {
     resourceId: RESOURCES.cancelledFinal,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { wltp: true, priceList: true, recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
+    enrich: { wltp: true, priceList: true, recalls: true },
   },
   {
     resourceId: RESOURCES.cancelledArchive2010,
     filters: paddedPlateFilters,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
+    enrich: { recalls: true },
   },
   {
     resourceId: RESOURCES.cancelledArchive2000,
     filters: paddedPlateFilters,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
+    enrich: { recalls: true },
   },
   {
     resourceId: RESOURCES.inactiveOld,
@@ -721,7 +702,7 @@ const FALLBACK_CHAIN = [
       subtitle: "נמצאה רשומה חלקית במאגר כלי רכב לא פעילים (ללא קוד דגם)",
     },
     rows: inactiveOldRows,
-    enrich: { recalls: true, status: { text: "⚠️ ירד מהכביש", tone: "warn" } },
+    enrich: { recalls: true },
   },
   {
     // מפתח שונה (mispar_tzama) ומרחב מספור נפרד — לכן אין להריץ העשרות
@@ -948,10 +929,8 @@ function renderVinCheck(record) {
   if (registryBrand) {
     if (brandGroup(registryBrand) === brandGroup(enBrand)) {
       badge = { text: "תואם ליצרן הרשום", tone: "valid" };
-      fillVerdict("vin", "✓ שלדה תואמת", "good");
     } else {
       badge = { text: "לא תואם ליצרן הרשום", tone: "expired" };
-      fillVerdict("vin", "⚠️ מספר השלדה אינו תואם ליצרן הרשום — מומלץ לבדוק", "bad");
     }
   }
   appendDetailRow("יצרן לפי מספר השלדה", displayName, badge ? { badge } : {});
@@ -1015,48 +994,6 @@ async function fetchVehicleImage(record, guard) {
     // אין רשת / חריגה מהזמן — פשוט בלי תמונה
   } finally {
     clearTimeout(timer);
-  }
-}
-
-/* ---------- שורת התמצית (צ'יפים מתחת לכותרת) ----------
-   תשובה במבט אחד לשלוש השאלות שכל קונה שואל: טסט, ריקולים, יד.
-   כמו החיווים — משבצות מוסתרות בסדר קבוע, כל תשובה ממלאת את שלה;
-   כשל משאיר את הצ'יפ מוסתר ולעולם אינו מוצג כ"אין" */
-
-// שורת התמצית המלאה — כל תשובת כן/לא מוסמכת כצ'יפ: סטטוס רישום, טסט,
-// ריקולים, יד, תו נכה והתאמת שלדה. מאגר חלקי (יד) מציג רק כשיש נתונים
-const VERDICT_KEYS = ["status", "test", "recall", "hands", "permit", "vin"];
-
-function prepareVerdictBox() {
-  verdictBox.replaceChildren();
-  verdictBox.classList.add("hidden");
-  for (const key of VERDICT_KEYS) {
-    const chip = el("span", "chip");
-    chip.dataset.verdict = key;
-    chip.hidden = true;
-    verdictBox.appendChild(chip);
-  }
-}
-
-function fillVerdict(key, text, tone) {
-  const chip = verdictBox.querySelector(`[data-verdict="${key}"]`);
-  if (!chip) return;
-  chip.className = `chip chip-${tone}`;
-  chip.textContent = text;
-  chip.hidden = false;
-  verdictBox.classList.remove("hidden");
-}
-
-// צ'יפ הטסט נגזר ישירות מהרשומה (סינכרוני) — אותו חישוב כמו התג בשורה
-function fillTestVerdict(record) {
-  const badge = validityBadge(record.tokef_dt);
-  if (!badge) return;
-  if (badge.tone === "valid") {
-    fillVerdict("test", "✅ טסט בתוקף", "good");
-  } else if (badge.tone === "expiring") {
-    fillVerdict("test", `⚠️ הטסט מסתיים בקרוב (${badge.text})`, "warn");
-  } else {
-    fillVerdict("test", "❌ הטסט פג תוקף", "bad");
   }
 }
 
@@ -1330,12 +1267,10 @@ function renderHistoryNoData() {
   );
 }
 
-// החלפות הבעלות מוצגות כאירועי "יד N" על ציר הזמן (במקום רשימה נפרדת),
-// והספירה ממלאת את צ'יפ היד בשורת התמצית
+// החלפות הבעלות מוצגות כאירועי "יד N" על ציר הזמן
 function renderOwnershipHistory(records) {
   if (!records.length) return;
   const sorted = [...records].sort((a, b) => Number(a.baalut_dt) - Number(b.baalut_dt));
-  fillVerdict("hands", `יד ${sorted.length}`, "info");
   addTimelineEvents(sorted.map((row, index) => ({
     date: timelineDate(row.baalut_dt),
     label: row.baalut ? `יד ${index + 1} — ${row.baalut}` : `יד ${index + 1}`,
@@ -1683,13 +1618,8 @@ function startPlateKeyedEnrichments(plateNumber, guard, ignore) {
   // שימו לב: שמות השדות במאגר זה מכילים רווחים
   ckanSearch(RESOURCES.disabledPermit, { "MISPAR RECHEV": plateNumber })
     .then(guard((records) => {
-      if (records[0]) {
-        renderPermit(records[0]);
-        fillVerdict("permit", "🅿 תו נכה", "info");
-      } else {
-        renderPermitNone();
-        fillVerdict("permit", "אין תו נכה", "muted");
-      }
+      if (records[0]) renderPermit(records[0]);
+      else renderPermitNone();
     }))
     .catch(ignore);
 }
@@ -1702,16 +1632,6 @@ function startEnrichments(record, plateNumber, options, token) {
   // כלי צמ"ה מגיע עם plateKeyed=false — מספרו (mispar_tzama) אינו מספר רישוי
   const plateKeyed = options.plateKeyed !== false;
 
-  // שורת התמצית והסיפור נבנות מיד מהרשומה; צ'יפי ריקול ויד יתמלאו
-  // כשהתשובות שלהם יגיעו
-  prepareVerdictBox();
-  // צ'יפ סטטוס הרישום — נגזר מהמאגר שבו נמצא הרכב (פעיל / ירד מהכביש /
-  // מבוטל); ברכב ציבורי נגזר משדות הביטול שברשומה עצמה
-  if (options.status) {
-    const status = typeof options.status === "function" ? options.status(record) : options.status;
-    if (status) fillVerdict("status", status.text, status.tone);
-  }
-  fillTestVerdict(record);
   renderStory(record);
   fetchVehicleImage(record, guard);
   // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
@@ -1826,15 +1746,9 @@ function startEnrichments(record, plateNumber, options, token) {
       .then(guard((records) => {
         if (!records.length) {
           renderRecallsAllClear();
-          fillVerdict("recall", "✅ אין ריקולים פתוחים", "good");
           return;
         }
         renderRecalls(records);
-        fillVerdict(
-          "recall",
-          records.length === 1 ? "⚠️ ריקול פתוח" : `⚠️ ${records.length} ריקולים פתוחים`,
-          "warn",
-        );
         addTimelineEvents(records.map((recall) => ({
           date: timelineDate(recall.TAARICH_PTICHA),
           label: "נפתחה קריאת ריקול",
@@ -2134,15 +2048,6 @@ function renderMyCarPanel() {
    את התאריך שלו. הקישור החי מצורף לשיתוף, כך שכל נמען במרחק הקלה אחת
    מבדיקה עדכנית. בדפדפן בלי שיתוף קבצים — נופלים לשיתוף הקישור הרגיל */
 
-// צבעי הצ'יפים בתמונה — תואמים ל-CSS (רקע, טקסט, מסגרת)
-const CARD_CHIP_COLORS = {
-  good: ["#ecfdf5", "#047857", "#a7f3d0"],
-  warn: ["#fef9c3", "#854d0e", "#fde68a"],
-  info: ["#eff6ff", "#1e40af", "#bfdbfe"],
-  bad: ["#fef2f2", "#b91c1c", "#fecaca"],
-  muted: ["#f4f4f5", "#71717a", "#e4e4e7"],
-};
-
 const CARD_FONT = "-apple-system, 'Segoe UI', Roboto, 'Heebo', Arial, sans-serif";
 
 // טעינה מחדש של תמונת הדגם עם CORS כדי שהקנבס לא "יוכתם" —
@@ -2162,12 +2067,6 @@ function loadCardImage() {
 
 // התוכן נאסף מה-DOM החי — תמיד מסונכרן עם מה שהמשתמש רואה
 function collectCardData() {
-  const chips = [...verdictBox.querySelectorAll(".chip")]
-    .filter((chip) => !chip.hidden)
-    .map((chip) => ({
-      text: chip.textContent,
-      tone: /chip-(\w+)/.exec(chip.className)?.[1] || "muted",
-    }));
   const wanted = ["שנת ייצור", "צבע", "סוג דלק", "בעלות"];
   const facts = [];
   for (const dt of resultDetails.querySelectorAll("dt")) {
@@ -2180,7 +2079,6 @@ function collectCardData() {
     plate: formatPlate(currentPlateDigits || ""),
     title: resultTitle.textContent,
     subtitle: resultSubtitle.classList.contains("hidden") ? "" : resultSubtitle.textContent,
-    chips,
     facts: facts.slice(0, 4),
   };
 }
@@ -2195,24 +2093,6 @@ function roundedRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// פריסת הצ'יפים לשורות ממורכזות לפי רוחב הטקסט בפועל
-function layoutCardChips(ctx, chips, maxWidth) {
-  ctx.font = `600 30px ${CARD_FONT}`;
-  const items = chips.map((chip) => ({ ...chip, width: ctx.measureText(chip.text).width + 48 }));
-  const rows = [[]];
-  let rowWidth = 0;
-  for (const item of items) {
-    const needed = item.width + (rows[rows.length - 1].length ? 14 : 0);
-    if (rowWidth + needed > maxWidth && rows[rows.length - 1].length) {
-      rows.push([]);
-      rowWidth = 0;
-    }
-    rows[rows.length - 1].push(item);
-    rowWidth += needed;
-  }
-  return rows;
-}
-
 async function buildShareCardBlob() {
   const data = collectCardData();
   if (!data.plate || !data.title) return null;
@@ -2220,17 +2100,13 @@ async function buildShareCardBlob() {
 
   const W = 1080;
   const PAD = 72;
-  const measure = document.createElement("canvas").getContext("2d");
-  const chipRows = layoutCardChips(measure, data.chips, W - PAD * 2);
-
   const imgH = vehicleImg
     ? Math.min(430, Math.round((W - PAD * 2) * (vehicleImg.naturalHeight / vehicleImg.naturalWidth)))
     : 0;
   const headerH = 150 + 78 + (data.subtitle ? 48 : 0);
-  const chipsH = chipRows.length * 74 + 10;
   const factsH = data.facts.length * 54 + (data.facts.length ? 26 : 0);
   const footerH = 118;
-  const H = PAD + headerH + chipsH + (imgH ? imgH + 36 : 6) + factsH + footerH;
+  const H = PAD + headerH + 16 + (imgH ? imgH + 36 : 6) + factsH + footerH;
 
   const canvas = document.createElement("canvas");
   canvas.width = W;
@@ -2280,25 +2156,7 @@ async function buildShareCardBlob() {
     y += 48;
   }
 
-  for (const row of chipRows) {
-    const rowWidth = row.reduce((sum, c) => sum + c.width, 0) + (row.length - 1) * 14;
-    let x = (W - rowWidth) / 2;
-    for (const chip of row) {
-      const [bg, fg, border] = CARD_CHIP_COLORS[chip.tone] || CARD_CHIP_COLORS.muted;
-      roundedRectPath(ctx, x, y, chip.width, 58, 29);
-      ctx.fillStyle = bg;
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = border;
-      ctx.stroke();
-      ctx.fillStyle = fg;
-      ctx.font = `600 30px ${CARD_FONT}`;
-      ctx.fillText(chip.text, x + chip.width / 2, y + 39);
-      x += chip.width + 14;
-    }
-    y += 74;
-  }
-  y += 10;
+  y += 16;
 
   if (vehicleImg && imgH) {
     const imgW = W - PAD * 2;
@@ -2371,10 +2229,7 @@ async function runSearch(digits) {
       });
       addRecent(digits, vehicleTitle(record));
       updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
-      startEnrichments(record, plateNumber, {
-        continuation: true, wltp: true, priceList: true, recalls: true, rarity: true,
-        status: { text: "✅ פעיל", tone: "good" },
-      }, token);
+      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true }, token);
       return;
     }
 
