@@ -44,6 +44,7 @@ const resultSubtitle = document.getElementById("result-subtitle");
 const vehicleImageBox = document.getElementById("vehicle-image");
 const verdictBox = document.getElementById("verdict-box");
 const resultDetails = document.getElementById("result-details");
+const timelineBox = document.getElementById("timeline-box");
 const historyBox = document.getElementById("history-box");
 const indicatorBox = document.getElementById("indicator-box");
 const safetyBox = document.getElementById("safety-box");
@@ -54,6 +55,9 @@ const recentList = document.getElementById("recent-list");
 const clearRecentBtn = document.getElementById("clear-recent");
 const shareBtn = document.getElementById("share-btn");
 const shareBtnLabel = document.getElementById("share-btn-label");
+const myCarBtn = document.getElementById("mycar-btn");
+const myCarBtnLabel = document.getElementById("mycar-btn-label");
+const myCarSection = document.getElementById("mycar");
 
 const MESSAGES = {
   invalid: "מספר רישוי חייב להכיל 2 עד 8 ספרות",
@@ -207,16 +211,21 @@ function formatPrice(value) {
 // סף "מסתיים בקרוב" לתוקף רישיון הרכב (ימים)
 const EXPIRY_SOON_DAYS = 30;
 
-// תג תוקף לפי תאריך ISO: "בתוקף" / "פג תוקף", וכשהתוקף מסתיים בתוך
-// 30 יום — תג כתום עם ספירת הימים שנותרו
-function validityBadge(isoDate) {
-  if (!isoDate) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate));
+// ימים שנותרו עד תאריך ISO (שלילי = עבר); null כשאין תאריך תקין
+function daysUntil(isoDate) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate || ""));
   if (!match) return null;
   const today = new Date();
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const expiry = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const days = Math.round((expiry - startOfToday) / 86400000);
+  return Math.round((expiry - startOfToday) / 86400000);
+}
+
+// תג תוקף לפי תאריך ISO: "בתוקף" / "פג תוקף", וכשהתוקף מסתיים בתוך
+// 30 יום — תג כתום עם ספירת הימים שנותרו
+function validityBadge(isoDate) {
+  const days = daysUntil(isoDate);
+  if (days == null) return null;
   if (days < 0) return { text: "פג תוקף", tone: "expired" };
   if (days === 0) return { text: "מסתיים היום", tone: "expiring" };
   if (days <= EXPIRY_SOON_DAYS) {
@@ -298,6 +307,8 @@ function clearMessage() {
 function hideResult() {
   resultCard.classList.add("hidden");
   resultBanner.classList.add("hidden");
+  myCarCandidate = null;
+  myCarBtn.classList.add("hidden");
   resultDetails.replaceChildren();
   verdictBox.classList.add("hidden");
   verdictBox.replaceChildren();
@@ -307,7 +318,7 @@ function hideResult() {
   vehicleImg.onload = null;
   vehicleImg.removeAttribute("src");
   vehicleImageBox.classList.add("hidden");
-  for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
+  for (const box of [timelineBox, historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
   }
@@ -328,6 +339,54 @@ function setBanner(banner) {
   }
 }
 
+/* ---------- הסברי שורות ("מה זה?") ----------
+   מונחים מקצועיים מקבלים כפתור ⓘ ליד התווית; לחיצה פותחת הסבר קצר
+   ושורת מקור — שקיפות על מקור כל נתון היא הבסיס לאמון בכלי. עובד במגע
+   (בלי hover), נסגר בלחיצה חוזרת */
+
+const SOURCE_MOT = "מאגר הרישוי, משרד התחבורה";
+const SOURCE_WLTP = "טבלת נתוני הדגמים, משרד התחבורה";
+
+const ROW_INFO = {
+  "קבוצת זיהום": ["דירוג זיהום האוויר של הדגם בסולם 1 (נקי ביותר) עד 15 (מזהם ביותר). משפיע על גובה אגרת הרישוי.", SOURCE_MOT],
+  "מספר שלדה": ["מספר הזיהוי הייחודי של הרכב (VIN) — מוטבע על השלדה ומלווה את הרכב כל חייו. כדאי לוודא שהוא תואם למוטבע ברכב עצמו.", SOURCE_MOT],
+  "יצרן לפי מספר השלדה": ["קידומת מספר השלדה מזהה את היצרן באופן בלתי תלוי ברישום. אי-התאמה ליצרן הרשום עלולה להעיד על לוחית שהועתקה מרכב אחר או על שגיאת רישום.", "פענוח מקומי של קידומת ה-VIN (ללא שליחת נתונים)"],
+  "רמת גימור": ["שם תצורת האבזור של הדגם כפי שנרשמה על ידי היבואן.", SOURCE_MOT],
+  "דירוג צמיגים": ["העומס והמהירות המרביים המותרים לצמיג, מפוענחים מהקוד המוטבע על דופן הצמיג (תקן ETRTO).", "מאגר הרישוי (קובץ המשך), משרד התחבורה"],
+  "מדד ירוק": ["ציון סביבתי משוקלל של הדגם — ככל שהמספר נמוך יותר, הרכב מזהם פחות.", SOURCE_WLTP],
+  "קבוצת אגרת רישוי": ["קבוצת המחיר של אגרת הרישוי השנתית — נקבעת לפי מחיר הרכב ורמת הזיהום שלו.", SOURCE_WLTP],
+  "ניקוד בטיחות": ["ניקוד מערכות הבטיחות המותקנות בדגם; ככל שגבוה יותר — אבזור הבטיחות עשיר יותר.", SOURCE_WLTP],
+  "רמת אבזור בטיחותי": ["דירוג משרד התחבורה לאבזור הבטיחות של הדגם, בסולם 0 עד 8.", SOURCE_WLTP],
+  "טכנולוגיית הנעה": ["סוג מערכת ההנעה: בנזין/דיזל רגיל, היברידי, פלאג-אין או חשמלי מלא.", SOURCE_WLTP],
+  "כושר גרירה": ["המשקל המרבי המותר לגרירה עם גרור בעל בלמים, לפי אישור היצרן.", SOURCE_WLTP],
+  "מחיר מחירון מקורי": ["מחיר המחירון של הדגם בעת עלייתו לכביש, לפי דיווח היבואן. אינו מחיר שוק נוכחי.", "מחירוני היבואנים, משרד התחבורה"],
+  "כמה כאלה על הכביש": ["ספירה חיה של רכבים מאותו דגם במאגר הרכב הפעיל — אינדיקציה לנפוצות (חלפים וביקוש) או לנדירות.", SOURCE_MOT],
+  "סיווג EU": ["קטגוריית הרישוי האירופית של הרכב (L לדו-גלגלי, M לנוסעים, N למסחרי).", SOURCE_MOT],
+  "רישיון נדרש (משוער)": ["הערכה לפי נפח המנוע וההספק: A1 עד 125 סמ\"ק, A2 עד 47 כ\"ס, A מעל. הדרגה המחייבת היא זו שברישיון הרכב.", "חישוב מקומי לפי נפח והספק"],
+};
+
+function attachRowInfo(dt, dd) {
+  const info = ROW_INFO[dt.textContent];
+  if (!info) return;
+  const button = el("button", "info-btn", "?");
+  button.type = "button";
+  button.setAttribute("aria-label", `מה זה ${dt.textContent}?`);
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", () => {
+    const existing = dd.querySelector(".row-note");
+    if (existing) {
+      existing.remove();
+      button.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const note = el("div", "row-note");
+    note.append(el("span", null, info[0]), el("span", "row-note-source", `מקור: ${info[1]}`));
+    dd.appendChild(note);
+    button.setAttribute("aria-expanded", "true");
+  });
+  dt.appendChild(button);
+}
+
 // opts: skip — לדלג על שורה ריקה במקום להציג "—"; ltr — ערך טכני (VIN וכד');
 // badge — תג {text, tone} שמוצג ליד הערך
 function appendDetailRow(label, value, opts = {}) {
@@ -338,7 +397,9 @@ function appendDetailRow(label, value, opts = {}) {
   if (opts.badge && !empty) {
     dd.appendChild(el("span", `badge badge-${opts.badge.tone}`, opts.badge.text));
   }
-  resultDetails.append(el("dt", null, label), dd);
+  const dt = el("dt", null, label);
+  attachRowInfo(dt, dd);
+  resultDetails.append(dt, dd);
 }
 
 function renderCard({ plateDigits, title, banner, rows }) {
@@ -574,7 +635,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הלא פעילים של משרד התחבורה",
     },
     rows: mainRegistryRows,
-    enrich: { wltp: true, priceList: true, recalls: true },
+    enrich: { wltp: true, priceList: true, recalls: true, status: { text: "⚠️ ירד מהכביש", tone: "warn" } },
   },
   {
     resourceId: RESOURCES.motorcycles,
@@ -584,7 +645,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר האופנועים והקטנועים",
     },
     rows: motorcycleRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
   },
   {
     resourceId: RESOURCES.personalImport,
@@ -594,7 +655,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב נרשם בישראל בהליך של יבוא אישי",
     },
     rows: personalImportRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
   },
   {
     resourceId: RESOURCES.publicTransport,
@@ -604,7 +665,23 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הציבוריים (אוטובוסים ומוניות)",
     },
     rows: publicTransportRows,
-    enrich: { wltp: true, priceList: true, recalls: true, busFleet: true },
+    enrich: {
+      wltp: true, priceList: true, recalls: true, busFleet: true,
+      // מאגר הרכב הציבורי כולל גם רשומות מבוטלות — הסטטוס נגזר מהרשומה.
+      // ההכרעה לפי bitul_cd ('0' = לא מבוטל); הטקסט מוצג מ-bitul_nm.
+      // ערכים בפועל (נדגמו מול המאגר): הפקדה/הפקדת סוחר/הורדה מהכביש הם
+      // ירידה זמנית מהכביש (כתום), והשאר ביטול של ממש (אדום)
+      status: (record) => {
+        const code = String(record.bitul_cd ?? "").trim();
+        const reason = String(record.bitul_nm || "").trim();
+        const active = code ? code === "0" : (!reason || /^(לא|ללא)/.test(reason));
+        if (active) return { text: "✅ פעיל", tone: "good" };
+        if (["C", "S", "B"].includes(code)) {
+          return { text: `⚠️ ${reason || "ירד מהכביש"}`, tone: "warn" };
+        }
+        return { text: `❌ ${reason || "מבוטל"}`, tone: "bad" };
+      },
+    },
   },
   {
     resourceId: RESOURCES.heavyTrucks,
@@ -614,27 +691,27 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב שמעל 3.5 טון (משאיות ורכבי אספנות ותיקים)",
     },
     rows: heavyTruckRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
   },
   {
     resourceId: RESOURCES.cancelledFinal,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { wltp: true, priceList: true, recalls: true },
+    enrich: { wltp: true, priceList: true, recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
   },
   {
     resourceId: RESOURCES.cancelledArchive2010,
     filters: paddedPlateFilters,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
   },
   {
     resourceId: RESOURCES.cancelledArchive2000,
     filters: paddedPlateFilters,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
   },
   {
     resourceId: RESOURCES.inactiveOld,
@@ -644,7 +721,7 @@ const FALLBACK_CHAIN = [
       subtitle: "נמצאה רשומה חלקית במאגר כלי רכב לא פעילים (ללא קוד דגם)",
     },
     rows: inactiveOldRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "⚠️ ירד מהכביש", tone: "warn" } },
   },
   {
     // מפתח שונה (mispar_tzama) ומרחב מספור נפרד — לכן אין להריץ העשרות
@@ -871,6 +948,7 @@ function renderVinCheck(record) {
   if (registryBrand) {
     if (brandGroup(registryBrand) === brandGroup(enBrand)) {
       badge = { text: "תואם ליצרן הרשום", tone: "valid" };
+      fillVerdict("vin", "✓ שלדה תואמת", "good");
     } else {
       badge = { text: "לא תואם ליצרן הרשום", tone: "expired" };
       fillVerdict("vin", "⚠️ מספר השלדה אינו תואם ליצרן הרשום — מומלץ לבדוק", "bad");
@@ -945,7 +1023,9 @@ async function fetchVehicleImage(record, guard) {
    כמו החיווים — משבצות מוסתרות בסדר קבוע, כל תשובה ממלאת את שלה;
    כשל משאיר את הצ'יפ מוסתר ולעולם אינו מוצג כ"אין" */
 
-const VERDICT_KEYS = ["vin", "test", "recall", "hands"];
+// שורת התמצית המלאה — כל תשובת כן/לא מוסמכת כצ'יפ: סטטוס רישום, טסט,
+// ריקולים, יד, תו נכה והתאמת שלדה. מאגר חלקי (יד) מציג רק כשיש נתונים
+const VERDICT_KEYS = ["status", "test", "recall", "hands", "permit", "vin"];
 
 function prepareVerdictBox() {
   verdictBox.replaceChildren();
@@ -994,6 +1074,128 @@ function renderStory(record) {
   if (!parts.length) return;
   resultSubtitle.textContent = parts.join(" · ");
   resultSubtitle.classList.remove("hidden");
+}
+
+/* ---------- סיפור הרכב — ציר זמן ----------
+   ביוגרפיה כרונולוגית של הרכב מנתונים שכבר נשלפים: עלה לכביש, החלפות
+   בעלות (יד 1, יד 2...), קריאות ריקול, הטסט האחרון (עם מד האוץ), סמן
+   "היום", ותוקף הרישיון כאירוע עתידי. אירועים מסונכרנים מגיעים מיד,
+   והשאר מצטרפים כשתשובות ההעשרה חוזרות — הציר ממוין מחדש בכל תוספת.
+   הציר מוצג רק כשיש לפחות שני אירועים מתוארכים */
+
+let timelineEvents = [];
+let timelineSeq = 0;
+
+function prepareTimeline() {
+  timelineEvents = [];
+  timelineBox.replaceChildren();
+  timelineBox.classList.add("hidden");
+}
+
+// תאריכי המאגרים מגיעים בארבע צורות: ISO מלא ("2022-10-24 ..."),
+// שנה-חודש ("2011-6"), מספר שלם YYYYMM (202210), ושנה בלבד (מאגר
+// הביטולים). יום חסר ממופה לסוף החודש לצורך המיון — כך אירוע חודשי
+// (יד 1 ב-10/2022) אינו נדחק לפני אירוע מדויק מאותו חודש (עלה לכביש
+// ב-24.10.2022); שנה בלבד ממופה לאמצע השנה. התצוגה נשארת ברזולוציה
+// המקורית
+function timelineDate(value) {
+  if (value == null || value === "") return null;
+  const str = String(value);
+  let match = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(str);
+  if (match) {
+    const [y, m, d] = [Number(match[1]), Number(match[2]), match[3] ? Number(match[3]) : null];
+    return {
+      sort: y * 10000 + m * 100 + (d ?? 28),
+      display: d ? `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}` : `${m}/${y}`,
+    };
+  }
+  match = /^(\d{4})(\d{2})$/.exec(str);
+  if (match) {
+    const [y, m] = [Number(match[1]), Number(match[2])];
+    return { sort: y * 10000 + m * 100 + 28, display: `${m}/${y}` };
+  }
+  match = /^(\d{4})$/.exec(str);
+  if (match) {
+    const y = Number(match[1]);
+    return y > 1900 && y < 2100 ? { sort: y * 10000 + 615, display: String(y) } : null;
+  }
+  return null;
+}
+
+function todaySortValue() {
+  const now = new Date();
+  return now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+}
+
+// הוספת אירועים לציר. אירוע עם key מחליף אירוע קודם באותו מפתח (רישום
+// ראשון מדויק מחליף את "עלה לכביש" החודשי). אירוע ללא תאריך תקין נזרק
+function addTimelineEvents(events) {
+  for (const event of events) {
+    if (!event.date) continue;
+    if (event.key) timelineEvents = timelineEvents.filter((e) => e.key !== event.key);
+    timelineEvents.push({ ...event, seq: timelineSeq++ });
+  }
+  renderTimeline();
+}
+
+// השלמת פרט לאירוע קיים (מד האוץ מצטרף לאירוע הטסט כשתשובת ההיסטוריה חוזרת)
+function addTimelineDetail(key, detail) {
+  const event = timelineEvents.find((e) => e.key === key);
+  if (!event || !detail) return;
+  event.detail = detail;
+  renderTimeline();
+}
+
+function renderTimeline() {
+  if (timelineEvents.length < 2) return;
+  const today = todaySortValue();
+  const events = [...timelineEvents].sort((a, b) => a.date.sort - b.date.sort || a.seq - b.seq);
+  const list = el("ol", "timeline-list");
+  const appendToday = () => {
+    const li = el("li", "tl-item tl-today");
+    li.append(el("span", "tl-dot"), el("span", "tl-label", "היום"));
+    list.appendChild(li);
+  };
+  let todayShown = false;
+  for (const event of events) {
+    const future = event.date.sort > today;
+    if (future && !todayShown) {
+      appendToday();
+      todayShown = true;
+    }
+    const li = el("li", `tl-item tl-${event.tone || "plain"}${future ? " tl-future" : ""}`);
+    li.appendChild(el("span", "tl-dot"));
+    const line = el("div", "tl-line");
+    line.append(el("span", "tl-date", event.date.display), el("span", "tl-label", event.label));
+    li.appendChild(line);
+    if (event.detail) li.appendChild(el("div", "tl-detail", event.detail));
+    list.appendChild(li);
+  }
+  if (!todayShown) appendToday();
+  timelineBox.replaceChildren(el("strong", null, "סיפור הרכב"), list);
+  timelineBox.classList.remove("hidden");
+}
+
+// אירועי הבסיס הנגזרים מרשומת הרכב עצמה (סינכרוני): עלייה לכביש, טסט
+// אחרון, ביטול (אם קיים) ותוקף הרישיון — עתידי כצפי, עבר כפג-תוקף
+function baseTimelineEvents(record) {
+  const events = [];
+  const aliya = timelineDate(record.moed_aliya_lakvish);
+  if (aliya) events.push({ key: "start", date: aliya, label: "עלה לכביש" });
+  const test = timelineDate(record.mivchan_acharon_dt);
+  if (test) events.push({ key: "test", date: test, label: "עבר טסט", tone: "good" });
+  const bitul = timelineDate(record.bitul_dt);
+  if (bitul && String(record.bitul_cd ?? "").trim() !== "0") {
+    const reason = String(record.bitul_nm || "").trim();
+    events.push({ key: "bitul", date: bitul, label: reason && !/^(לא|ללא)/.test(reason) ? reason : "בוטל סופית", tone: "bad" });
+  }
+  const tokef = timelineDate(record.tokef_dt);
+  if (tokef) {
+    events.push(tokef.sort >= todaySortValue()
+      ? { key: "tokef", date: tokef, label: "תוקף רישיון הרכב", tone: "good" }
+      : { key: "tokef", date: tokef, label: "פג תוקף רישיון הרכב", tone: "bad" });
+  }
+  return events;
 }
 
 /* ---------- העשרות (בקשות מקבילות אחרי מציאת הרכב) ---------- */
@@ -1051,7 +1253,7 @@ const HISTORY_FLAGS = [
 // כשהתשובות מגיעות השלד מוסר, ואם אין שום תוכן הסעיף כולו נעלם
 function prepareHistoryBox() {
   historyBox.replaceChildren(el("strong", null, "היסטוריית הרכב"));
-  for (const key of ["km", "facts", "flags", "owners", "nodata"]) {
+  for (const key of ["km", "facts", "flags", "nodata"]) {
     const slot = el("div", `history-slot history-${key}`);
     slot.dataset.history = key;
     slot.hidden = true;
@@ -1073,7 +1275,13 @@ function showHistorySlot(key) {
 }
 
 function renderVehicleHistory(record) {
+  // רישום ראשון מדויק מחליף את אירוע "עלה לכביש" החודשי על ציר הזמן,
+  // ומד האוץ מצטרף כפרט לאירוע הטסט האחרון
+  const firstReg = timelineDate(record.rishum_rishon_dt);
+  if (firstReg) addTimelineEvents([{ key: "start", date: firstReg, label: "עלה לכביש" }]);
+
   const km = formatKm(record.kilometer_test_aharon);
+  if (km) addTimelineDetail("test", `מד אוץ: ${km} ק"מ`);
   if (km) {
     const slot = showHistorySlot("km");
     slot.append(
@@ -1122,21 +1330,16 @@ function renderHistoryNoData() {
   );
 }
 
+// החלפות הבעלות מוצגות כאירועי "יד N" על ציר הזמן (במקום רשימה נפרדת),
+// והספירה ממלאת את צ'יפ היד בשורת התמצית
 function renderOwnershipHistory(records) {
   if (!records.length) return;
   const sorted = [...records].sort((a, b) => Number(a.baalut_dt) - Number(b.baalut_dt));
   fillVerdict("hands", `יד ${sorted.length}`, "info");
-
-  const head = el("div", "history-owners-head");
-  head.append(el("span", null, "החלפות בעלות"), el("span", "hand-badge", `יד ${sorted.length}`));
-
-  const list = el("ol", "history-owners-list");
-  for (const row of sorted) {
-    const when = formatYearMonthInt(row.baalut_dt);
-    list.appendChild(el("li", null, when ? `${when} — ${row.baalut || ""}` : String(row.baalut || "")));
-  }
-
-  showHistorySlot("owners").append(head, list);
+  addTimelineEvents(sorted.map((row, index) => ({
+    date: timelineDate(row.baalut_dt),
+    label: row.baalut ? `יד ${index + 1} — ${row.baalut}` : `יד ${index + 1}`,
+  })));
 }
 
 /* ---------- חיווים נקודתיים (בקשה אחת לכל מאגר, מוצג רק בהתאמה) ---------- */
@@ -1394,6 +1597,7 @@ function addPlaceholderRows(group, rowDefs) {
   rowDefs.forEach(([label], index) => {
     const dt = el("dt", null, label);
     const dd = el("dd");
+    attachRowInfo(dt, dd);
     dt.hidden = dd.hidden = true;
     dt.dataset.enrich = dd.dataset.enrich = `${group}-${index}`;
     resultDetails.append(dt, dd);
@@ -1479,8 +1683,13 @@ function startPlateKeyedEnrichments(plateNumber, guard, ignore) {
   // שימו לב: שמות השדות במאגר זה מכילים רווחים
   ckanSearch(RESOURCES.disabledPermit, { "MISPAR RECHEV": plateNumber })
     .then(guard((records) => {
-      if (records[0]) renderPermit(records[0]);
-      else renderPermitNone();
+      if (records[0]) {
+        renderPermit(records[0]);
+        fillVerdict("permit", "🅿 תו נכה", "info");
+      } else {
+        renderPermitNone();
+        fillVerdict("permit", "אין תו נכה", "muted");
+      }
     }))
     .catch(ignore);
 }
@@ -1496,12 +1705,23 @@ function startEnrichments(record, plateNumber, options, token) {
   // שורת התמצית והסיפור נבנות מיד מהרשומה; צ'יפי ריקול ויד יתמלאו
   // כשהתשובות שלהם יגיעו
   prepareVerdictBox();
+  // צ'יפ סטטוס הרישום — נגזר מהמאגר שבו נמצא הרכב (פעיל / ירד מהכביש /
+  // מבוטל); ברכב ציבורי נגזר משדות הביטול שברשומה עצמה
+  if (options.status) {
+    const status = typeof options.status === "function" ? options.status(record) : options.status;
+    if (status) fillVerdict("status", status.text, status.tone);
+  }
   fillTestVerdict(record);
   renderStory(record);
   fetchVehicleImage(record, guard);
   // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
   // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה
   renderVinCheck(record);
+
+  // ציר הזמן נפתח מיד עם אירועי הבסיס מהרשומה; החלפות בעלות, ריקולים
+  // ומד האוץ מצטרפים כשתשובות ההעשרה חוזרות
+  prepareTimeline();
+  addTimelineEvents(baseTimelineEvents(record));
 
   const joinFilters = modelJoinFilters(record);
   const wantWltp = options.wltp && joinFilters;
@@ -1615,6 +1835,11 @@ function startEnrichments(record, plateNumber, options, token) {
           records.length === 1 ? "⚠️ ריקול פתוח" : `⚠️ ${records.length} ריקולים פתוחים`,
           "warn",
         );
+        addTimelineEvents(records.map((recall) => ({
+          date: timelineDate(recall.TAARICH_PTICHA),
+          label: "נפתחה קריאת ריקול",
+          tone: "warn",
+        })));
         const recallIds = [...new Set(records.map((r) => r.RECALL_ID).filter((id) => id != null))];
         if (!recallIds.length) return;
         ckanSearch(RESOURCES.recallDetails, { RECALL_ID: recallIds }, recallIds.length)
@@ -1714,6 +1939,28 @@ function resetShareButton(plateDigits) {
 shareBtn.addEventListener("click", async () => {
   if (!currentPlateDigits) return;
   const url = plateUrl(currentPlateDigits);
+
+  // קודם מנסים לשתף את תמונת הכרטיס עם הקישור (וואטסאפ ודומיו); ביטול
+  // על ידי המשתמש עוצר כאן, וכל כשל אחר נופל בשקט לשיתוף הקישור הרגיל
+  if (navigator.canShare) {
+    try {
+      const blob = await buildShareCardBlob();
+      if (blob) {
+        const file = new File([blob], `rechev-${currentPlateDigits}.png`, { type: "image/png" });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `פרטי רכב ${formatPlate(currentPlateDigits)}`,
+            text: url,
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+
   try {
     if (navigator.share) {
       await navigator.share({ title: `פרטי רכב ${formatPlate(currentPlateDigits)}`, url });
@@ -1731,6 +1978,371 @@ shareBtn.addEventListener("click", async () => {
     // המשתמש ביטל את חלון השיתוף או שהגישה ללוח נדחתה
   }
 });
+
+/* ---------- הרכב שלי ----------
+   שמירה מקומית (localStorage בלבד) של רכב אחד — בדרך כלל הרכב של
+   המשתמש עצמו: כפתור ⭐ בכרטיס שומר, ופאנל במסך הבית מציג את הרכב עם
+   ספירה לאחור לתוקף הטסט, בדיקה חוזרת בלחיצה, והורדת תזכורת ליומן
+   (קובץ ‎.ics‎ שנוצר במכשיר). בדיקה חוזרת של הרכב השמור מרעננת את
+   הנתונים השמורים אוטומטית. שום דבר לא נשלח לשרת */
+
+const MYCAR_KEY = "lci_mycar_v1";
+
+// הרכב שמוצג כרגע בכרטיס — מועמד לשמירה בלחיצת הכפתור
+let myCarCandidate = null;
+
+function loadMyCar() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MYCAR_KEY));
+    return stored && stored.p ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMyCar(car) {
+  try {
+    if (car) localStorage.setItem(MYCAR_KEY, JSON.stringify(car));
+    else localStorage.removeItem(MYCAR_KEY);
+  } catch {
+    // אחסון לא זמין — הפיצ'ר פשוט לא פעיל
+  }
+}
+
+function refreshMyCarButton() {
+  const saved = loadMyCar();
+  const isSaved = Boolean(saved && myCarCandidate && saved.p === myCarCandidate.p);
+  myCarBtnLabel.textContent = isSaved ? "★ נשמר כרכב שלי" : "☆ שמירה כרכב שלי";
+  myCarBtn.classList.toggle("mycar-saved", isSaved);
+  myCarBtn.classList.toggle("hidden", !myCarCandidate);
+}
+
+// נקרא בכל תוצאה: מעדכן את המועמד לשמירה, ואם זה הרכב השמור — מרענן
+// את הנתונים השמורים (כותרת ותוקף) מהבדיקה הטרייה
+function updateMyCarCandidate(digits, title, tokefDt) {
+  myCarCandidate = { p: digits, l: title || "", tokef: tokefDt || null };
+  const saved = loadMyCar();
+  if (saved && saved.p === digits) {
+    saveMyCar(myCarCandidate);
+    renderMyCarPanel();
+  }
+  refreshMyCarButton();
+}
+
+myCarBtn.addEventListener("click", () => {
+  if (!myCarCandidate) return;
+  const saved = loadMyCar();
+  saveMyCar(saved && saved.p === myCarCandidate.p ? null : myCarCandidate);
+  refreshMyCarButton();
+  renderMyCarPanel();
+});
+
+// צ'יפ מצב הטסט בפאנל — אותם ספים כמו תג התוקף בכרטיס
+function myCarTestChip(tokef) {
+  const days = daysUntil(tokef);
+  if (days == null) return null;
+  if (days < 0) return el("span", "chip chip-bad", "❌ הטסט פג תוקף");
+  if (days === 0) return el("span", "chip chip-warn", "⚠️ הטסט מסתיים היום");
+  if (days <= EXPIRY_SOON_DAYS) {
+    return el("span", "chip chip-warn", days === 1 ? "⚠️ הטסט מסתיים מחר" : `⚠️ הטסט מסתיים בעוד ${days} ימים`);
+  }
+  return el("span", "chip chip-good", `✅ טסט בתוקף עד ${formatDate(tokef)} (עוד ${days} ימים)`);
+}
+
+// קובץ תזכורת ליומן: אירוע יום-שלם שבועיים לפני תום התוקף (או מחר,
+// אם נשארו פחות משבועיים), עם קישור לבדיקה עדכנית
+function downloadTestReminder(car) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(car.tokef || ""));
+  if (!match) return;
+  const due = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  let remind = new Date(due);
+  remind.setDate(remind.getDate() - 14);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (remind < tomorrow) remind = tomorrow;
+  const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const esc = (s) => String(s).replace(/([\\;,])/g, "\\$1");
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//License-Check-IL//HE",
+    "BEGIN:VEVENT",
+    `UID:lci-${car.p}-${ymd(due)}@license-check-il`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+    `DTSTART;VALUE=DATE:${ymd(remind)}`,
+    `SUMMARY:${esc(`תזכורת: טסט לרכב ${formatPlate(car.p)} עד ${formatDate(car.tokef)}`)}`,
+    `DESCRIPTION:${esc(`תוקף רישיון הרכב מסתיים ב-${formatDate(car.tokef)}. לבדיקה עדכנית: ${plateUrl(car.p)}`)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ];
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `test-reminder-${car.p}.ics`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+}
+
+function renderMyCarPanel() {
+  const car = loadMyCar();
+  myCarSection.replaceChildren();
+  myCarSection.classList.toggle("hidden", !car);
+  if (!car) return;
+
+  const head = el("div", "recent-head");
+  head.appendChild(el("h3", null, "⭐ הרכב שלי"));
+  const removeBtn = el("button", null, "הסרה");
+  removeBtn.type = "button";
+  removeBtn.addEventListener("click", () => {
+    saveMyCar(null);
+    renderMyCarPanel();
+    refreshMyCarButton();
+  });
+  head.appendChild(removeBtn);
+
+  const row = el("div", "mycar-row");
+  const checkBtn = el("button", "recent-chip");
+  checkBtn.type = "button";
+  const plateSpan = el("span", "recent-plate", formatPlate(car.p));
+  plateSpan.dir = "ltr";
+  checkBtn.appendChild(plateSpan);
+  if (car.l) checkBtn.appendChild(el("span", "recent-label", car.l));
+  checkBtn.addEventListener("click", () => {
+    input.value = formatPlate(car.p);
+    runSearch(car.p);
+  });
+  row.appendChild(checkBtn);
+
+  const testChip = myCarTestChip(car.tokef);
+  if (testChip) row.appendChild(testChip);
+
+  const remindDays = daysUntil(car.tokef);
+  if (remindDays != null && remindDays >= 0) {
+    const icsBtn = el("button", "recent-chip mycar-ics", "🗓 תזכורת ליומן");
+    icsBtn.type = "button";
+    icsBtn.addEventListener("click", () => downloadTestReminder(car));
+    row.appendChild(icsBtn);
+  }
+
+  myCarSection.append(head, row);
+}
+
+/* ---------- כרטיס שיתוף — תמונת תמצית ----------
+   במקום קישור יבש, שיתוף מפיק תמונת כרטיס (canvas) שנוחתת יפה בוואטסאפ:
+   הלוחית הצהובה, שם הדגם, צ'יפי התמצית, תמונת הדגם (אם נטענה), עובדות
+   מפתח, וחותמת תאריך הבדיקה — צילום מסך שחי מחוץ לאפליקציה חייב לשאת
+   את התאריך שלו. הקישור החי מצורף לשיתוף, כך שכל נמען במרחק הקלה אחת
+   מבדיקה עדכנית. בדפדפן בלי שיתוף קבצים — נופלים לשיתוף הקישור הרגיל */
+
+// צבעי הצ'יפים בתמונה — תואמים ל-CSS (רקע, טקסט, מסגרת)
+const CARD_CHIP_COLORS = {
+  good: ["#ecfdf5", "#047857", "#a7f3d0"],
+  warn: ["#fef9c3", "#854d0e", "#fde68a"],
+  info: ["#eff6ff", "#1e40af", "#bfdbfe"],
+  bad: ["#fef2f2", "#b91c1c", "#fecaca"],
+  muted: ["#f4f4f5", "#71717a", "#e4e4e7"],
+};
+
+const CARD_FONT = "-apple-system, 'Segoe UI', Roboto, 'Heebo', Arial, sans-serif";
+
+// טעינה מחדש של תמונת הדגם עם CORS כדי שהקנבס לא "יוכתם" —
+// upload.wikimedia.org מגיש עם Access-Control-Allow-Origin: *
+function loadCardImage() {
+  const domImg = vehicleImageBox.querySelector("img");
+  if (vehicleImageBox.classList.contains("hidden") || !domImg?.src) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    const timer = setTimeout(() => resolve(null), 4000);
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = domImg.src;
+  });
+}
+
+// התוכן נאסף מה-DOM החי — תמיד מסונכרן עם מה שהמשתמש רואה
+function collectCardData() {
+  const chips = [...verdictBox.querySelectorAll(".chip")]
+    .filter((chip) => !chip.hidden)
+    .map((chip) => ({
+      text: chip.textContent,
+      tone: /chip-(\w+)/.exec(chip.className)?.[1] || "muted",
+    }));
+  const wanted = ["שנת ייצור", "צבע", "סוג דלק", "בעלות"];
+  const facts = [];
+  for (const dt of resultDetails.querySelectorAll("dt")) {
+    if (!wanted.includes(dt.textContent) || dt.hidden) continue;
+    const dd = dt.nextElementSibling;
+    const value = dd?.childNodes[0]?.textContent?.trim();
+    if (value && value !== "—") facts.push([dt.textContent, value]);
+  }
+  return {
+    plate: formatPlate(currentPlateDigits || ""),
+    title: resultTitle.textContent,
+    subtitle: resultSubtitle.classList.contains("hidden") ? "" : resultSubtitle.textContent,
+    chips,
+    facts: facts.slice(0, 4),
+  };
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// פריסת הצ'יפים לשורות ממורכזות לפי רוחב הטקסט בפועל
+function layoutCardChips(ctx, chips, maxWidth) {
+  ctx.font = `600 30px ${CARD_FONT}`;
+  const items = chips.map((chip) => ({ ...chip, width: ctx.measureText(chip.text).width + 48 }));
+  const rows = [[]];
+  let rowWidth = 0;
+  for (const item of items) {
+    const needed = item.width + (rows[rows.length - 1].length ? 14 : 0);
+    if (rowWidth + needed > maxWidth && rows[rows.length - 1].length) {
+      rows.push([]);
+      rowWidth = 0;
+    }
+    rows[rows.length - 1].push(item);
+    rowWidth += needed;
+  }
+  return rows;
+}
+
+async function buildShareCardBlob() {
+  const data = collectCardData();
+  if (!data.plate || !data.title) return null;
+  const vehicleImg = await loadCardImage();
+
+  const W = 1080;
+  const PAD = 72;
+  const measure = document.createElement("canvas").getContext("2d");
+  const chipRows = layoutCardChips(measure, data.chips, W - PAD * 2);
+
+  const imgH = vehicleImg
+    ? Math.min(430, Math.round((W - PAD * 2) * (vehicleImg.naturalHeight / vehicleImg.naturalWidth)))
+    : 0;
+  const headerH = 150 + 78 + (data.subtitle ? 48 : 0);
+  const chipsH = chipRows.length * 74 + 10;
+  const factsH = data.facts.length * 54 + (data.facts.length ? 26 : 0);
+  const footerH = 118;
+  const H = PAD + headerH + chipsH + (imgH ? imgH + 36 : 6) + factsH + footerH;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.direction = "rtl";
+  ctx.textAlign = "center";
+
+  ctx.fillStyle = "#f6f8fb";
+  ctx.fillRect(0, 0, W, H);
+
+  let y = PAD;
+
+  // הלוחית: צהוב ישראלי, מסגרת שחורה, פס כחול עם IL בקצה
+  const plateW = 460;
+  const plateH = 104;
+  const plateX = (W - plateW) / 2;
+  roundedRectPath(ctx, plateX, y, plateW, plateH, 14);
+  ctx.fillStyle = "#ffd320";
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#1f2937";
+  ctx.stroke();
+  ctx.save();
+  roundedRectPath(ctx, plateX, y, plateW, plateH, 14);
+  ctx.clip();
+  ctx.fillStyle = "#2563eb";
+  ctx.fillRect(plateX, y, 56, plateH);
+  ctx.fillStyle = "#fff";
+  ctx.font = `700 30px ${CARD_FONT}`;
+  ctx.fillText("IL", plateX + 28, y + plateH / 2 + 11);
+  ctx.restore();
+  ctx.fillStyle = "#111827";
+  ctx.font = `700 60px ${CARD_FONT}`;
+  // ממורכז בשטח הצהוב, אחרי הפס הכחול
+  ctx.fillText(data.plate, plateX + 56 + (plateW - 56) / 2, y + plateH / 2 + 22);
+  y += 150;
+
+  ctx.fillStyle = "#111827";
+  ctx.font = `700 52px ${CARD_FONT}`;
+  ctx.fillText(data.title, W / 2, y + 40, W - PAD * 2);
+  y += 78;
+  if (data.subtitle) {
+    ctx.fillStyle = "#6b7280";
+    ctx.font = `400 32px ${CARD_FONT}`;
+    ctx.fillText(data.subtitle, W / 2, y + 22, W - PAD * 2);
+    y += 48;
+  }
+
+  for (const row of chipRows) {
+    const rowWidth = row.reduce((sum, c) => sum + c.width, 0) + (row.length - 1) * 14;
+    let x = (W - rowWidth) / 2;
+    for (const chip of row) {
+      const [bg, fg, border] = CARD_CHIP_COLORS[chip.tone] || CARD_CHIP_COLORS.muted;
+      roundedRectPath(ctx, x, y, chip.width, 58, 29);
+      ctx.fillStyle = bg;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = border;
+      ctx.stroke();
+      ctx.fillStyle = fg;
+      ctx.font = `600 30px ${CARD_FONT}`;
+      ctx.fillText(chip.text, x + chip.width / 2, y + 39);
+      x += chip.width + 14;
+    }
+    y += 74;
+  }
+  y += 10;
+
+  if (vehicleImg && imgH) {
+    const imgW = W - PAD * 2;
+    ctx.save();
+    roundedRectPath(ctx, PAD, y, imgW, imgH, 18);
+    ctx.clip();
+    ctx.drawImage(vehicleImg, PAD, y, imgW, imgH);
+    ctx.restore();
+    y += imgH + 36;
+  } else {
+    y += 6;
+  }
+
+  if (data.facts.length) {
+    ctx.font = `400 32px ${CARD_FONT}`;
+    for (const [label, value] of data.facts) {
+      ctx.fillStyle = "#6b7280";
+      ctx.textAlign = "right";
+      ctx.fillText(label, W - PAD, y + 24);
+      ctx.fillStyle = "#111827";
+      ctx.textAlign = "left";
+      ctx.font = `600 32px ${CARD_FONT}`;
+      ctx.fillText(value, PAD, y + 24);
+      ctx.font = `400 32px ${CARD_FONT}`;
+      y += 54;
+    }
+    ctx.textAlign = "center";
+    y += 26;
+  }
+
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(PAD, y);
+  ctx.lineTo(W - PAD, y);
+  ctx.stroke();
+  const checkedAt = new Date();
+  const stamp = `${String(checkedAt.getDate()).padStart(2, "0")}.${String(checkedAt.getMonth() + 1).padStart(2, "0")}.${checkedAt.getFullYear()}`;
+  ctx.fillStyle = "#6b7280";
+  ctx.font = `400 28px ${CARD_FONT}`;
+  ctx.fillText(`🚗 בדיקת כלי רכב · נבדק ב-${stamp} · הנתונים ממאגרי משרד התחבורה`, W / 2, y + 52, W - PAD * 2);
+
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
 
 /* ---------- זרימת החיפוש ---------- */
 
@@ -1758,7 +2370,11 @@ async function runSearch(digits) {
         rows: mainRegistryRows(record),
       });
       addRecent(digits, vehicleTitle(record));
-      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true }, token);
+      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
+      startEnrichments(record, plateNumber, {
+        continuation: true, wltp: true, priceList: true, recalls: true, rarity: true,
+        status: { text: "✅ פעיל", tone: "good" },
+      }, token);
       return;
     }
 
@@ -1785,6 +2401,7 @@ async function runSearch(digits) {
         rows: fallback.rows(record),
       });
       addRecent(digits, vehicleTitle(record));
+      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
       startEnrichments(record, plateNumber, fallback.enrich, token);
       return;
     }
@@ -1825,6 +2442,30 @@ input.addEventListener("input", () => {
   input.setSelectionRange(pos, pos);
 });
 
+/* הדבקה חכמה: אפשר להדביק טקסט שלם (מודעת יד 2, הודעת וואטסאפ) —
+   מספר הרישוי מחולץ מתוכו והבדיקה רצה מיד. עדיפות למספר בפורמט לוחית
+   (12-345-67); אחרת רצף חשוף של 7-8 ספרות. טלפונים (9-10 ספרות) ומחירים
+   עם פסיקים אינם נתפסים; הכול מקומי, בלי לשלוח את הטקסט לשום מקום */
+function extractPlateFromText(text) {
+  const str = String(text);
+  for (const match of str.matchAll(/(?<!\d)\d{2,3}[-־.]\d{2,3}[-־.]\d{2,3}(?!\d)/g)) {
+    const digits = digitsOnly(match[0]);
+    if (digits.length === 7 || digits.length === 8) return digits;
+  }
+  return /(?<!\d)(\d{7,8})(?!\d)/.exec(str)?.[1] || null;
+}
+
+input.addEventListener("paste", (event) => {
+  const text = event.clipboardData?.getData("text") || "";
+  // מספר נקי (ספרות/מקפים/רווחים בלבד) ממשיך במסלול ההקלדה הרגיל
+  if (!text || /^[\d\s־.-]*$/.test(text)) return;
+  const plate = extractPlateFromText(text);
+  if (!plate) return;
+  event.preventDefault();
+  input.value = formatPlate(plate);
+  runSearch(plate);
+});
+
 // מיקוד בשדה בוחר את כל המספר, כך שהקלדה מחליפה אותו מיד — הזנת מספר
 // חדש בלחיצה אחת ואז הקלדה. rAF כדי לרוץ אחרי מיקום הסמן של הדפדפן
 input.addEventListener("focus", () => {
@@ -1856,6 +2497,7 @@ form.addEventListener("submit", (event) => {
 });
 
 renderRecent();
+renderMyCarPanel();
 
 // כניסה דרך קישור משותף (?plate=) — ממלאים את השדה ומריצים בדיקה אוטומטית
 const initialPlate = digitsOnly(new URLSearchParams(location.search).get("plate") || "");
