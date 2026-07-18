@@ -462,6 +462,14 @@ body {
   border: 1px solid #fecaca;
 }
 
+/* תשובה שלילית מוסמכת ("אין תו נכה") — עובדה שקטה, לא התרעה */
+.chip-muted {
+  background: #f4f4f5;
+  color: #71717a;
+  border: 1px solid #e4e4e7;
+  font-weight: 500;
+}
+
 .indicators {
   margin-top: 16px;
 }

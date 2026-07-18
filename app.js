@@ -574,7 +574,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הלא פעילים של משרד התחבורה",
     },
     rows: mainRegistryRows,
-    enrich: { wltp: true, priceList: true, recalls: true },
+    enrich: { wltp: true, priceList: true, recalls: true, status: { text: "⚠️ ירד מהכביש", tone: "warn" } },
   },
   {
     resourceId: RESOURCES.motorcycles,
@@ -584,7 +584,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר האופנועים והקטנועים",
     },
     rows: motorcycleRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
   },
   {
     resourceId: RESOURCES.personalImport,
@@ -594,7 +594,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב נרשם בישראל בהליך של יבוא אישי",
     },
     rows: personalImportRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
   },
   {
     resourceId: RESOURCES.publicTransport,
@@ -604,7 +604,14 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הציבוריים (אוטובוסים ומוניות)",
     },
     rows: publicTransportRows,
-    enrich: { wltp: true, priceList: true, recalls: true, busFleet: true },
+    enrich: {
+      wltp: true, priceList: true, recalls: true, busFleet: true,
+      // מאגר הרכב הציבורי כולל גם רשומות מבוטלות — הסטטוס נגזר מהרשומה
+      status: (record) =>
+        record.bitul_nm && !/^לא/.test(String(record.bitul_nm).trim())
+          ? { text: "❌ מבוטל", tone: "bad" }
+          : { text: "✅ פעיל", tone: "good" },
+    },
   },
   {
     resourceId: RESOURCES.heavyTrucks,
@@ -614,27 +621,27 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב שמעל 3.5 טון (משאיות ורכבי אספנות ותיקים)",
     },
     rows: heavyTruckRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "✅ פעיל", tone: "good" } },
   },
   {
     resourceId: RESOURCES.cancelledFinal,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { wltp: true, priceList: true, recalls: true },
+    enrich: { wltp: true, priceList: true, recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
   },
   {
     resourceId: RESOURCES.cancelledArchive2010,
     filters: paddedPlateFilters,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
   },
   {
     resourceId: RESOURCES.cancelledArchive2000,
     filters: paddedPlateFilters,
     banner: cancelledBanner,
     rows: cancelledRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "❌ מבוטל סופית", tone: "bad" } },
   },
   {
     resourceId: RESOURCES.inactiveOld,
@@ -644,7 +651,7 @@ const FALLBACK_CHAIN = [
       subtitle: "נמצאה רשומה חלקית במאגר כלי רכב לא פעילים (ללא קוד דגם)",
     },
     rows: inactiveOldRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, status: { text: "⚠️ ירד מהכביש", tone: "warn" } },
   },
   {
     // מפתח שונה (mispar_tzama) ומרחב מספור נפרד — לכן אין להריץ העשרות
@@ -871,6 +878,7 @@ function renderVinCheck(record) {
   if (registryBrand) {
     if (brandGroup(registryBrand) === brandGroup(enBrand)) {
       badge = { text: "תואם ליצרן הרשום", tone: "valid" };
+      fillVerdict("vin", "✓ שלדה תואמת", "good");
     } else {
       badge = { text: "לא תואם ליצרן הרשום", tone: "expired" };
       fillVerdict("vin", "⚠️ מספר השלדה אינו תואם ליצרן הרשום — מומלץ לבדוק", "bad");
@@ -945,7 +953,9 @@ async function fetchVehicleImage(record, guard) {
    כמו החיווים — משבצות מוסתרות בסדר קבוע, כל תשובה ממלאת את שלה;
    כשל משאיר את הצ'יפ מוסתר ולעולם אינו מוצג כ"אין" */
 
-const VERDICT_KEYS = ["vin", "test", "recall", "hands"];
+// שורת התמצית המלאה — כל תשובת כן/לא מוסמכת כצ'יפ: סטטוס רישום, טסט,
+// ריקולים, יד, תו נכה והתאמת שלדה. מאגר חלקי (יד) מציג רק כשיש נתונים
+const VERDICT_KEYS = ["status", "test", "recall", "hands", "permit", "vin"];
 
 function prepareVerdictBox() {
   verdictBox.replaceChildren();
@@ -1479,8 +1489,13 @@ function startPlateKeyedEnrichments(plateNumber, guard, ignore) {
   // שימו לב: שמות השדות במאגר זה מכילים רווחים
   ckanSearch(RESOURCES.disabledPermit, { "MISPAR RECHEV": plateNumber })
     .then(guard((records) => {
-      if (records[0]) renderPermit(records[0]);
-      else renderPermitNone();
+      if (records[0]) {
+        renderPermit(records[0]);
+        fillVerdict("permit", "🅿 תו נכה", "info");
+      } else {
+        renderPermitNone();
+        fillVerdict("permit", "אין תו נכה", "muted");
+      }
     }))
     .catch(ignore);
 }
@@ -1496,6 +1511,12 @@ function startEnrichments(record, plateNumber, options, token) {
   // שורת התמצית והסיפור נבנות מיד מהרשומה; צ'יפי ריקול ויד יתמלאו
   // כשהתשובות שלהם יגיעו
   prepareVerdictBox();
+  // צ'יפ סטטוס הרישום — נגזר מהמאגר שבו נמצא הרכב (פעיל / ירד מהכביש /
+  // מבוטל); ברכב ציבורי נגזר משדות הביטול שברשומה עצמה
+  if (options.status) {
+    const status = typeof options.status === "function" ? options.status(record) : options.status;
+    if (status) fillVerdict("status", status.text, status.tone);
+  }
   fillTestVerdict(record);
   renderStory(record);
   fetchVehicleImage(record, guard);
@@ -1758,7 +1779,10 @@ async function runSearch(digits) {
         rows: mainRegistryRows(record),
       });
       addRecent(digits, vehicleTitle(record));
-      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true }, token);
+      startEnrichments(record, plateNumber, {
+        continuation: true, wltp: true, priceList: true, recalls: true, rarity: true,
+        status: { text: "✅ פעיל", tone: "good" },
+      }, token);
       return;
     }
 
