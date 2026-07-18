@@ -3,7 +3,7 @@
    ישנה), נפילה למטמון כשאין רשת. בקשות חוצות-מקור (data.gov.il) אינן
    מיורטות כלל — תוצאות חיפוש תמיד מגיעות חיות מהמאגר הממשלתי. */
 
-const CACHE_NAME = "lci-shell-v2";
+const CACHE_NAME = "lci-shell-v3";
 
 const SHELL_ASSETS = [
   "./",
@@ -15,6 +15,7 @@ const SHELL_ASSETS = [
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
+  "./icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -46,8 +47,10 @@ self.addEventListener("fetch", (event) => {
       .then((response) => {
         // עותק טרי נשמר במטמון לשימוש הבא ללא רשת. waitUntil מאריך את חיי
         // ה-SW עד שהכתיבה מסתיימת — בלעדיו הדפדפן רשאי לסיים את התהליך
-        // מיד אחרי מסירת התשובה והכתיבה עלולה ללכת לאיבוד
-        if (response.ok) {
+        // מיד אחרי מסירת התשובה והכתיבה עלולה ללכת לאיבוד.
+        // ניווטים אינם נשמרים: הנפילה ללא-רשת משתמשת תמיד ב-./index.html
+        // מהמטמון, וכל ‎?plate=‎ ייחודי היה מוסיף רשומה מתה שאינה נקראת
+        if (response.ok && request.mode !== "navigate") {
           const copy = response.clone();
           event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
         }

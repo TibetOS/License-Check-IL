@@ -132,7 +132,14 @@ function setScannerStatus(text) {
 }
 
 function onScannerKeydown(event) {
-  if (event.key === "Escape") closeScanner();
+  if (event.key === "Escape") {
+    closeScanner();
+  } else if (event.key === "Tab") {
+    // מלכודת מיקוד: כפתור הסגירה הוא האלמנט היחיד הניתן למיקוד בדיאלוג,
+    // ולכן Tab נשאר עליו ואינו בורח לפקדים המוסתרים שמאחורי השכבה
+    event.preventDefault();
+    scannerCloseBtn.focus();
+  }
 }
 
 function stopStream() {
@@ -182,9 +189,11 @@ async function openScanner() {
     if (session === scanSession) closeScanner(SCANNER_MESSAGES.noCamera);
     return;
   }
-  if (session !== scanSession) {
-    // השכבה נסגרה בזמן ההמתנה לאישור — משחררים את המצלמה מיד
+  if (session !== scanSession || document.hidden) {
+    // השכבה נסגרה בזמן ההמתנה לאישור, או שהדף עבר לרקע בזמן חלון ההרשאה —
+    // משחררים את המצלמה מיד במקום להפעיל אותה ברקע
     for (const track of stream.getTracks()) track.stop();
+    if (session === scanSession) closeScanner();
     return;
   }
 
@@ -345,8 +354,9 @@ if (navigator.mediaDevices?.getUserMedia) {
   addCameraButton();
 
   // פרטיות וסוללה: מעבר לרקע (החלפת אפליקציה / מסך כבוי) סוגר את הסורק
-  // ומשחרר את המצלמה מיד
+  // ומשחרר את המצלמה מיד. הבדיקה היא על השכבה הפתוחה ולא על הזרם —
+  // כך נסגר גם סורק שעדיין ממתין לאישור הרשאת המצלמה
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && activeStream) closeScanner();
+    if (document.hidden && scannerOverlay?.classList.contains("open")) closeScanner();
   });
 }
