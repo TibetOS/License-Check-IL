@@ -4,6 +4,10 @@ Research notes on the CKAN API behind the app, the structure of the vehicle
 registry, and every related per-plate registry on the portal. All resource IDs,
 schemas, and behaviors below were verified live against the API on 2026-07-17.
 
+> **Round 2** — sources *beyond* the ministry registries (VIN decoding, Open
+> Bus, fuel prices, Wikidata, verified dead ends): see
+> [DATA-RESEARCH-2.md](DATA-RESEARCH-2.md).
+
 ## TL;DR
 
 - The app already queries the right resource. The dataset's second file

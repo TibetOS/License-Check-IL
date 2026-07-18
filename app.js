@@ -693,6 +693,9 @@ const MAKER_EN = {
   "פיגו": "Peugeot", "פרארי": "Ferrari", "צ'רי": "Chery", "קאדילאק": "Cadillac",
   "קופרה": "Cupra", "קיה": "Kia", "קרייזלר": "Chrysler", "רובר": "Rover",
   "רולס-רויס": "Rolls-Royce", "רנו": "Renault", "שברולט": "Chevrolet",
+  // יצרני דו-גלגלי (לפי האיות בפועל במאגר האופנועים)
+  "ימהה": "Yamaha", "קוואסאקי": "Kawasaki", "אפריליה": "Aprilia",
+  "טריומף": "Triumph", "בנלי": "Benelli",
 };
 
 function makerEnglish(tozeretNm) {
@@ -704,6 +707,176 @@ function makerEnglish(tozeretNm) {
     }
   }
   return best ? MAKER_EN[best] : null;
+}
+
+/* ---------- זיהוי יצרן לפי מספר השלדה (VIN) ----------
+   שלושת התווים הראשונים במספר שלדה תקני (WMI) מזהים את היצרן — פענוח
+   סטטי, ללא בקשת רשת. הצלבה מול היצרן הרשום במאגר: אי-התאמה היא דגל
+   אדום (רכב "משוכפל" הנושא לוחית של רכב אחר, או שגיאת רישום), בדיוק מה
+   שבדיקה לפני קנייה נועדה לתפוס.
+   זהירות מובנית: WMI לא מוכר או יצרן רשום לא מזוהה = אין שורה ואין
+   התרעה — לעולם לא מתריעים על סמך "לא יודע". מדינת הייצור אינה מוצגת
+   ואינה מוצלבת: יצרנים אירופיים חותמים WMI של מדינת האם גם במפעלים
+   אחרים (WF0 לפורד ספרד/טורקיה), והמדינה ממילא כתובה ב-tozeret_nm */
+
+// הקידומות שוקפו מול שלדות אמיתיות במאגר (דגימה לכל יצרן, 2026-07-18).
+// הערך: [שם תצוגה, שם היצרן באנגלית להצלבה מול MAKER_EN]
+const WMI_MAKERS = {
+  // יפן — קידומות דו-תוויות רק כשכל הטווח שייך ליצרן אחד
+  JT: ["טויוטה / לקסוס", "Toyota"], JH: ["הונדה", "Honda"],
+  JN: ["ניסאן / אינפיניטי", "Nissan"], JS: ["סוזוקי", "Suzuki"],
+  JMZ: ["מזדה", "Mazda"], JM1: ["מזדה", "Mazda"], JM6: ["מזדה", "Mazda"],
+  JM7: ["מזדה", "Mazda"],
+  JMB: ["מיצובישי", "Mitsubishi"], JMY: ["מיצובישי", "Mitsubishi"],
+  JA3: ["מיצובישי", "Mitsubishi"], JA4: ["מיצובישי", "Mitsubishi"],
+  JF1: ["סובארו", "Subaru"], JF2: ["סובארו", "Subaru"],
+  JDA: ["דייהטסו", "Daihatsu"],
+  JAA: ["איסוזו", "Isuzu"], JAC: ["איסוזו", "Isuzu"], JAL: ["איסוזו", "Isuzu"],
+  JYA: ["ימהה", "Yamaha"], JKA: ["קוואסאקי", "Kawasaki"], JKB: ["קוואסאקי", "Kawasaki"],
+  // דרום קוריאה
+  KMH: ["יונדאי", "Hyundai"], KM8: ["יונדאי", "Hyundai"], KMF: ["יונדאי", "Hyundai"],
+  KMJ: ["יונדאי", "Hyundai"], KMT: ["יונדאי / ג'נסיס", "Hyundai"], KMU: ["יונדאי / ג'נסיס", "Hyundai"],
+  KNA: ["קיה", "Kia"], KNC: ["קיה", "Kia"], KND: ["קיה", "Kia"], KNE: ["קיה", "Kia"],
+  KNM: ["רנו", "Renault"],
+  KPT: ["סאנגיונג", "SsangYong"], KPA: ["סאנגיונג", "SsangYong"],
+  KL: ["שברולט / GM", "Chevrolet"],
+  // סין
+  LRW: ["טסלה", "Tesla"], LGX: ["בי ווי די", "BYD"], LC0: ["בי ווי די", "BYD"],
+  LNN: ["צ'רי / אומודה", "Chery"], LVT: ["צ'רי / אומודה", "Chery"],
+  LVU: ["צ'רי / אומודה", "Chery"], LVV: ["צ'רי / אומודה", "Chery"],
+  LSJ: ["MG", "MG"], LSK: ["מקסוס", "Maxus"], LSH: ["מקסוס", "Maxus"], LSF: ["מקסוס", "Maxus"],
+  LB3: ["קבוצת ג'ילי", "Geely"], L6T: ["קבוצת ג'ילי", "Geely"],
+  LGW: ["גרייט וול", "Great Wall"], LFZ: ["ליפמוטור", "Leapmotor"],
+  L1N: ["אקספנג", "XPeng"], LJ1: ["ניאו", "NIO"], HJN: ["ניאו", "NIO"],
+  LDP: ["דונגפנג", "Dongfeng"], LVY: ["וולבו", "Volvo"], LHG: ["הונדה", "Honda"],
+  LC6: ["סוזוקי", "Suzuki"], LC2: ["קימקו", "Kymco"], YSM: ["פולסטאר", "Polestar"],
+  HES: ["סמארט", "Smart"],
+  // גרמניה
+  WVW: ["פולקסווגן", "Volkswagen"], WVG: ["פולקסווגן", "Volkswagen"],
+  WV1: ["פולקסווגן", "Volkswagen"], WV2: ["פולקסווגן", "Volkswagen"],
+  WAU: ["אאודי", "Audi"], WUA: ["אאודי", "Audi"],
+  WB: ["ב.מ.וו", "BMW"], WMW: ["מיני", "Mini"],
+  WDB: ["מרצדס", "Mercedes-Benz"], WDC: ["מרצדס", "Mercedes-Benz"],
+  WDD: ["מרצדס", "Mercedes-Benz"], WDF: ["מרצדס", "Mercedes-Benz"],
+  W1K: ["מרצדס", "Mercedes-Benz"], W1N: ["מרצדס", "Mercedes-Benz"],
+  W1V: ["מרצדס", "Mercedes-Benz"], W1Y: ["מרצדס", "Mercedes-Benz"],
+  W1A: ["מרצדס / סמארט", "Mercedes-Benz"], WME: ["סמארט", "Smart"],
+  WP0: ["פורשה", "Porsche"], WP1: ["פורשה", "Porsche"],
+  W0L: ["אופל", "Opel"], W0V: ["אופל", "Opel"], VXK: ["אופל", "Opel"],
+  WF0: ["פורד", "Ford"], WMA: ["מאן", "MAN"],
+  // צרפת
+  VF1: ["רנו", "Renault"], VF6: ["רנו", "Renault"], VNV: ["ניסאן / רנו", "Nissan"],
+  VF3: ["פיג'ו", "Peugeot"], VR3: ["פיג'ו", "Peugeot"],
+  VF7: ["סיטרואן", "Citroen"], VR7: ["סיטרואן", "Citroen"], VR1: ["סיטרואן / DS", "Citroen"],
+  VNK: ["טויוטה", "Toyota"], VG5: ["ימהה", "Yamaha"],
+  // איטליה
+  ZFA: ["פיאט", "Fiat"], ZAR: ["אלפא רומיאו", "Alfa Romeo"], ZAA: ["אלפא רומיאו", "Alfa Romeo"],
+  ZAC: ["ג'יפ", "Jeep"], ZFF: ["פרארי", "Ferrari"], ZAM: ["מזראטי", "Maserati"],
+  ZHW: ["למבורגיני", "Lamborghini"], ZCF: ["איווקו", "Iveco"],
+  ZAP: ["פיאג'ו", "Piaggio"], ZDC: ["הונדה", "Honda"], ZDM: ["דוקאטי", "Ducati"],
+  ZD4: ["אפריליה", "Aprilia"], ZBN: ["בנלי", "Benelli"],
+  // ספרד
+  VSS: ["סיאט / קופרה", "SEAT"], VSK: ["ניסאן", "Nissan"],
+  // בריטניה
+  SAJ: ["יגואר", "Jaguar"], SAD: ["יגואר", "Jaguar"], SAL: ["לנד רובר", "Land Rover"],
+  SAR: ["רובר", "Rover"], SB1: ["טויוטה", "Toyota"],
+  SHS: ["הונדה", "Honda"], SHH: ["הונדה", "Honda"], SJN: ["ניסאן", "Nissan"],
+  SCA: ["רולס-רויס", "Rolls-Royce"], SCB: ["בנטלי", "Bentley"], SCC: ["לוטוס", "Lotus"],
+  SMT: ["טריומף", "Triumph"],
+  // מרכז אירופה וטורקיה
+  TMB: ["סקודה", "Skoda"], TMA: ["יונדאי", "Hyundai"], TSM: ["סוזוקי", "Suzuki"],
+  U5Y: ["קיה", "Kia"], U6Y: ["קיה", "Kia"], UU1: ["דאציה", "Dacia"],
+  NMT: ["טויוטה", "Toyota"], NM0: ["פורד", "Ford"], NM4: ["פיאט", "Fiat"],
+  NLH: ["יונדאי", "Hyundai"], NLA: ["הונדה", "Honda"],
+  // סקנדינביה והולנד
+  YV1: ["וולבו", "Volvo"], YV2: ["וולבו", "Volvo"], YV3: ["וולבו", "Volvo"],
+  YV4: ["וולבו", "Volvo"], YS3: ["סאאב", "Saab"],
+  YS2: ["סקאניה", "Scania"], YS4: ["סקאניה", "Scania"], XLR: ["DAF", "DAF"],
+  // אוסטריה
+  VBK: ["KTM", "KTM"],
+  // צפון אמריקה
+  "1FA": ["פורד", "Ford"], "1FM": ["פורד", "Ford"], "1FT": ["פורד", "Ford"],
+  "1FD": ["פורד", "Ford"], "2FM": ["פורד", "Ford"], "3FA": ["פורד", "Ford"],
+  "1G": ["שברולט / GM", "Chevrolet"], "2G": ["שברולט / GM", "Chevrolet"], "3G": ["שברולט / GM", "Chevrolet"],
+  "1C3": ["קרייזלר / ג'יפ / דודג'", "Chrysler"], "1C4": ["קרייזלר / ג'יפ / דודג'", "Chrysler"],
+  "1C6": ["קרייזלר / ג'יפ / דודג'", "Chrysler"], "2C3": ["קרייזלר / ג'יפ / דודג'", "Chrysler"],
+  "1J4": ["ג'יפ", "Jeep"], "1J8": ["ג'יפ", "Jeep"],
+  "3N1": ["ניסאן", "Nissan"], "3N6": ["ניסאן", "Nissan"], "3N8": ["ניסאן", "Nissan"],
+  "3VW": ["פולקסווגן", "Volkswagen"], "3KP": ["קיה", "Kia"],
+  "5UX": ["ב.מ.וו", "BMW"], "5YM": ["ב.מ.וו", "BMW"], "4US": ["ב.מ.וו", "BMW"],
+  "5YJ": ["טסלה", "Tesla"], "7SA": ["טסלה", "Tesla"], XP7: ["טסלה", "Tesla"],
+  "1HG": ["הונדה", "Honda"], "1HF": ["הונדה", "Honda"], "1HD": ["הארלי דיווידסון", "Harley-Davidson"],
+  // אסיה (מחוץ ליפן/סין) ואפריקה
+  MR0: ["טויוטה", "Toyota"], AHT: ["טויוטה", "Toyota"], AFA: ["פורד", "Ford"],
+  MPA: ["איסוזו", "Isuzu"], MNB: ["פורד", "Ford"],
+  MMB: ["מיצובישי", "Mitsubishi"], MMC: ["מיצובישי", "Mitsubishi"], MMT: ["מיצובישי", "Mitsubishi"],
+  MAL: ["יונדאי", "Hyundai"], MDH: ["ניסאן", "Nissan"],
+  MA3: ["סוזוקי", "Suzuki"], MB8: ["סוזוקי", "Suzuki"], MAK: ["הונדה", "Honda"],
+  MLH: ["הונדה", "Honda"], RLH: ["הונדה", "Honda"], ML5: ["קוואסאקי", "Kawasaki"],
+  MH3: ["ימהה", "Yamaha"], RP8: ["אפריליה / פיאג'ו", "Piaggio"], MET: ["אפריליה", "Aprilia"],
+  RFB: ["קימקו", "Kymco"],
+};
+
+// קבוצות יצרנים: מותגים מאותו קונצרן חולקים מפעלים ופלטפורמות (רכב
+// ממותג-מחדש נושא WMI של המותג הבונה), ולכן התאמה נבדקת ברמת הקבוצה —
+// מותג שאינו ברשימה הוא קבוצה של עצמו. עדיף לפספס זיוף נדיר מאשר
+// להתריע לשווא על רכב כשר
+const BRAND_GROUP = {
+  Lexus: "Toyota", Daihatsu: "Toyota",
+  Audi: "Volkswagen", SEAT: "Volkswagen", Cupra: "Volkswagen", Skoda: "Volkswagen",
+  Porsche: "Volkswagen", Bentley: "Volkswagen", Lamborghini: "Volkswagen", MAN: "Volkswagen",
+  "Alfa Romeo": "Fiat", Peugeot: "Fiat", Citroen: "Fiat", Opel: "Fiat",
+  Jeep: "Fiat", Dodge: "Fiat", Chrysler: "Fiat", Maserati: "Fiat",
+  Dacia: "Renault", Nissan: "Renault", Infiniti: "Renault", Mitsubishi: "Renault",
+  Kia: "Hyundai",
+  Buick: "Chevrolet", Cadillac: "Chevrolet",
+  Mini: "BMW", "Rolls-Royce": "BMW",
+  Smart: "Mercedes-Benz",
+  Volvo: "Geely", Polestar: "Geely", "Lynk & Co": "Geely", Zeekr: "Geely", Lotus: "Geely",
+  Lincoln: "Ford",
+  Omoda: "Chery", Maxus: "MG",
+  "Land Rover": "Jaguar",
+  Aprilia: "Piaggio",
+};
+
+function brandGroup(enBrand) {
+  return BRAND_GROUP[enBrand] || enBrand;
+}
+
+// מספר שלדה תקני: 17 תווים חוקיים (ללא I/O/Q). שלדות ישנות מאוחסנות
+// לעתים עם מקף (מזדה: "JMZBG12E5-V0866477") — מסירים מקפים ורווחים.
+// שלדה קצרה/לא-תקנית מוחזרת null — אין WMI אמין לפענח
+function normalizedVin(record) {
+  const raw = String(record.misgeret || record.shilda || record.mispar_shilda || "")
+    .toUpperCase()
+    .replace(/[\s-]/g, "");
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(raw) ? raw : null;
+}
+
+function decodeWmi(vin) {
+  return WMI_MAKERS[vin.slice(0, 3)] || WMI_MAKERS[vin.slice(0, 2)] || null;
+}
+
+// שורת "יצרן לפי מספר השלדה" + הצלבה מול היצרן הרשום. סינכרוני לחלוטין.
+// שלוש תוצאות: תואם (תג ירוק), לא תואם (תג אדום + צ'יפ אזהרה בשורת
+// התמצית), או יצרן רשום לא מזוהה (שורת מידע בלבד, ללא תג)
+function renderVinCheck(record) {
+  const vin = normalizedVin(record);
+  if (!vin) return;
+  const decoded = decodeWmi(vin);
+  if (!decoded) return;
+  const [displayName, enBrand] = decoded;
+  const registryBrand = makerEnglish(record.tozeret_nm);
+  let badge = null;
+  if (registryBrand) {
+    if (brandGroup(registryBrand) === brandGroup(enBrand)) {
+      badge = { text: "תואם ליצרן הרשום", tone: "valid" };
+    } else {
+      badge = { text: "לא תואם ליצרן הרשום", tone: "expired" };
+      fillVerdict("vin", "⚠️ מספר השלדה אינו תואם ליצרן הרשום — מומלץ לבדוק", "bad");
+    }
+  }
+  appendDetailRow("יצרן לפי מספר השלדה", displayName, badge ? { badge } : {});
 }
 
 // נירמול להשוואת כותרות: הסרת ניקוד/סימנים (Škoda → skoda) והשארת
@@ -772,7 +945,7 @@ async function fetchVehicleImage(record, guard) {
    כמו החיווים — משבצות מוסתרות בסדר קבוע, כל תשובה ממלאת את שלה;
    כשל משאיר את הצ'יפ מוסתר ולעולם אינו מוצג כ"אין" */
 
-const VERDICT_KEYS = ["test", "recall", "hands"];
+const VERDICT_KEYS = ["vin", "test", "recall", "hands"];
 
 function prepareVerdictBox() {
   verdictBox.replaceChildren();
@@ -1326,6 +1499,9 @@ function startEnrichments(record, plateNumber, options, token) {
   fillTestVerdict(record);
   renderStory(record);
   fetchVehicleImage(record, guard);
+  // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
+  // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה
+  renderVinCheck(record);
 
   const joinFilters = modelJoinFilters(record);
   const wantWltp = options.wltp && joinFilters;
