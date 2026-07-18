@@ -55,6 +55,7 @@ const shareBtnLabel = document.getElementById("share-btn-label");
 const MESSAGES = {
   invalid: "מספר רישוי חייב להכיל 2 עד 8 ספרות",
   notFound: "הרכב לא נמצא באף אחד מהמאגרים. ייתכן שמדובר ברכב חדש מאוד או במספר שגוי.",
+  notFoundPartial: "הרכב לא נמצא, אך חלק מהמאגרים לא היו זמינים לבדיקה — נסו שוב בעוד רגע.",
   apiError: "שגיאה בגישה למאגר הממשלתי. נסו שוב בעוד רגע.",
   offline: "אין חיבור לאינטרנט. הבדיקה דורשת חיבור למאגר הממשלתי.",
   loading: "בודק את המאגר…",
@@ -1356,9 +1357,13 @@ async function runSearch(digits) {
       return;
     }
 
-    // אם המאגר הראשי ענה אבל כל מאגרי הגיבוי נכשלו — זו שגיאת API, לא "לא נמצא"
+    // אם המאגר הראשי ענה אבל כל מאגרי הגיבוי נכשלו — זו שגיאת API, לא "לא נמצא".
+    // כשל חלקי (חלק מהמאגרים לא נבדקו) לעולם לא מוצג כ"לא נמצא באף מאגר" —
+    // הרכב עשוי להימצא דווקא במאגר שנכשל
     if (results.every((result) => result.status === "rejected")) {
       showMessage(networkErrorMessage(), "error");
+    } else if (results.some((result) => result.status === "rejected")) {
+      showMessage(MESSAGES.notFoundPartial, "notfound");
     } else {
       showMessage(MESSAGES.notFound, "notfound");
     }
