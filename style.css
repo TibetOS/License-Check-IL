@@ -904,26 +904,115 @@ body {
   stroke-linecap: round;
 }
 
+/* המסגרת ממורכזת אבסולוטית והמשוב (רצועת קריאה + סטטוס) ממוקם מתחתיה
+   בנפרד — כך שינויי תוכן במשוב לעולם לא מזיזים את המסגרת (שממנה נגזר
+   אזור החיתוך של ה-OCR) */
 .scanner-frame {
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
   pointer-events: none;
 }
 
+.scanner-frame .scanner-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.scanner-feedback {
+  position: absolute;
+  top: calc(50% + min(86vw, 500px) / 4.7 / 2 + 14px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
 /* מסגרת בצורת לוחית — צהוב-לוחית, יחס ~4.7:1. הצללית האינסופית מסביב
-   מחשיכה את שאר התמונה וממקדת את העין (והמצלמה) בלוחית */
+   מחשיכה את שאר התמונה וממקדת את העין (והמצלמה) בלוחית.
+   צבע המסגרת משקף את מצב הזיהוי: צהוב = סורק, כתום = מועמד ממתין
+   לאימות, ירוק = אומת */
 .scanner-guide {
   width: min(86vw, 500px);
   aspect-ratio: 4.7 / 1;
   border: 3px solid var(--plate-yellow);
   border-radius: 8px;
   box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.45);
+  transition: border-color 0.15s ease;
+}
+
+.scanner-guide.candidate {
+  border-color: #fb923c;
+}
+
+.scanner-guide.locked {
+  border-color: #22c55e;
+}
+
+/* רצועת הקריאה החיה — הספרות שהזיהוי קורא כרגע, בסגנון לוחית */
+.scanner-reading {
+  padding: 2px 16px;
+  border-radius: 6px;
+  background: var(--plate-yellow);
+  border: 2px solid #1a2233;
+  color: #1a2233;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* קריאה חלקית — עדיין לא לוחית מלאה, מוצגת מעומעמת */
+.scanner-reading.partial {
+  opacity: 0.55;
+}
+
+/* אומת — הרצועה מוריקה יחד עם המסגרת */
+.scanner-reading.locked {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #14532d;
+}
+
+/* כפתור פנס — מוצג רק כשהמצלמה תומכת, בפינה שמול כפתור הסגירה */
+.scanner-torch {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  inset-inline-end: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-torch:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+/* הפנס דולק — הכפתור מתהפך לבהיר */
+.scanner-torch.on {
+  background: #fff;
+  color: #1a2233;
+}
+
+.scanner-torch svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  stroke: none;
 }
 
 .scanner-status {
