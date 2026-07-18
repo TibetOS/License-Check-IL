@@ -56,6 +56,7 @@ const MESSAGES = {
   invalid: "מספר רישוי חייב להכיל 2 עד 8 ספרות",
   notFound: "הרכב לא נמצא באף אחד מהמאגרים. ייתכן שמדובר ברכב חדש מאוד או במספר שגוי.",
   apiError: "שגיאה בגישה למאגר הממשלתי. נסו שוב בעוד רגע.",
+  offline: "אין חיבור לאינטרנט. הבדיקה דורשת חיבור למאגר הממשלתי.",
   loading: "בודק את המאגר…",
   loadingFallback: "לא נמצא במאגר הראשי, בודק מאגרים נוספים…",
 };
@@ -266,6 +267,12 @@ function el(tag, className, text) {
 
 function showMessage(text, type) {
   statusEl.replaceChildren(el("p", `message ${type}`, text));
+}
+
+// כשל רשת: הודעת "אין אינטרנט" ברורה כשהדפדפן יודע שהוא לא-מקוון,
+// אחרת הודעת שגיאת המאגר הרגילה
+function networkErrorMessage() {
+  return navigator.onLine === false ? MESSAGES.offline : MESSAGES.apiError;
 }
 
 function clearMessage() {
@@ -1351,14 +1358,14 @@ async function runSearch(digits) {
 
     // אם המאגר הראשי ענה אבל כל מאגרי הגיבוי נכשלו — זו שגיאת API, לא "לא נמצא"
     if (results.every((result) => result.status === "rejected")) {
-      showMessage(MESSAGES.apiError, "error");
+      showMessage(networkErrorMessage(), "error");
     } else {
       showMessage(MESSAGES.notFound, "notfound");
     }
   } catch (error) {
     if (token !== searchToken) return;
     console.error(error);
-    showMessage(MESSAGES.apiError, "error");
+    showMessage(networkErrorMessage(), "error");
   } finally {
     if (token === searchToken) submitBtn.disabled = false;
   }
@@ -1418,4 +1425,12 @@ const initialPlate = digitsOnly(new URLSearchParams(location.search).get("plate"
 if (isValidPlate(initialPlate)) {
   input.value = formatPlate(initialPlate);
   runSearch(initialPlate);
+}
+
+// Service Worker — מעטפת האתר נטענת גם ללא רשת והאתר ניתן להתקנה כאפליקציה.
+// נתוני חיפוש עצמם תמיד מגיעים חיים מהמאגר (ה-SW לא נוגע בבקשות ל-data.gov.il)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
 }
