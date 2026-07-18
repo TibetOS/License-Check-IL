@@ -44,6 +44,7 @@ const resultSubtitle = document.getElementById("result-subtitle");
 const vehicleImageBox = document.getElementById("vehicle-image");
 const verdictBox = document.getElementById("verdict-box");
 const resultDetails = document.getElementById("result-details");
+const timelineBox = document.getElementById("timeline-box");
 const historyBox = document.getElementById("history-box");
 const indicatorBox = document.getElementById("indicator-box");
 const safetyBox = document.getElementById("safety-box");
@@ -307,7 +308,7 @@ function hideResult() {
   vehicleImg.onload = null;
   vehicleImg.removeAttribute("src");
   vehicleImageBox.classList.add("hidden");
-  for (const box of [historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
+  for (const box of [timelineBox, historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
   }
@@ -1015,6 +1016,128 @@ function renderStory(record) {
   resultSubtitle.classList.remove("hidden");
 }
 
+/* ---------- סיפור הרכב — ציר זמן ----------
+   ביוגרפיה כרונולוגית של הרכב מנתונים שכבר נשלפים: עלה לכביש, החלפות
+   בעלות (יד 1, יד 2...), קריאות ריקול, הטסט האחרון (עם מד האוץ), סמן
+   "היום", ותוקף הרישיון כאירוע עתידי. אירועים מסונכרנים מגיעים מיד,
+   והשאר מצטרפים כשתשובות ההעשרה חוזרות — הציר ממוין מחדש בכל תוספת.
+   הציר מוצג רק כשיש לפחות שני אירועים מתוארכים */
+
+let timelineEvents = [];
+let timelineSeq = 0;
+
+function prepareTimeline() {
+  timelineEvents = [];
+  timelineBox.replaceChildren();
+  timelineBox.classList.add("hidden");
+}
+
+// תאריכי המאגרים מגיעים בארבע צורות: ISO מלא ("2022-10-24 ..."),
+// שנה-חודש ("2011-6"), מספר שלם YYYYMM (202210), ושנה בלבד (מאגר
+// הביטולים). יום חסר ממופה לסוף החודש לצורך המיון — כך אירוע חודשי
+// (יד 1 ב-10/2022) אינו נדחק לפני אירוע מדויק מאותו חודש (עלה לכביש
+// ב-24.10.2022); שנה בלבד ממופה לאמצע השנה. התצוגה נשארת ברזולוציה
+// המקורית
+function timelineDate(value) {
+  if (value == null || value === "") return null;
+  const str = String(value);
+  let match = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(str);
+  if (match) {
+    const [y, m, d] = [Number(match[1]), Number(match[2]), match[3] ? Number(match[3]) : null];
+    return {
+      sort: y * 10000 + m * 100 + (d ?? 28),
+      display: d ? `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}` : `${m}/${y}`,
+    };
+  }
+  match = /^(\d{4})(\d{2})$/.exec(str);
+  if (match) {
+    const [y, m] = [Number(match[1]), Number(match[2])];
+    return { sort: y * 10000 + m * 100 + 28, display: `${m}/${y}` };
+  }
+  match = /^(\d{4})$/.exec(str);
+  if (match) {
+    const y = Number(match[1]);
+    return y > 1900 && y < 2100 ? { sort: y * 10000 + 615, display: String(y) } : null;
+  }
+  return null;
+}
+
+function todaySortValue() {
+  const now = new Date();
+  return now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+}
+
+// הוספת אירועים לציר. אירוע עם key מחליף אירוע קודם באותו מפתח (רישום
+// ראשון מדויק מחליף את "עלה לכביש" החודשי). אירוע ללא תאריך תקין נזרק
+function addTimelineEvents(events) {
+  for (const event of events) {
+    if (!event.date) continue;
+    if (event.key) timelineEvents = timelineEvents.filter((e) => e.key !== event.key);
+    timelineEvents.push({ ...event, seq: timelineSeq++ });
+  }
+  renderTimeline();
+}
+
+// השלמת פרט לאירוע קיים (מד האוץ מצטרף לאירוע הטסט כשתשובת ההיסטוריה חוזרת)
+function addTimelineDetail(key, detail) {
+  const event = timelineEvents.find((e) => e.key === key);
+  if (!event || !detail) return;
+  event.detail = detail;
+  renderTimeline();
+}
+
+function renderTimeline() {
+  if (timelineEvents.length < 2) return;
+  const today = todaySortValue();
+  const events = [...timelineEvents].sort((a, b) => a.date.sort - b.date.sort || a.seq - b.seq);
+  const list = el("ol", "timeline-list");
+  const appendToday = () => {
+    const li = el("li", "tl-item tl-today");
+    li.append(el("span", "tl-dot"), el("span", "tl-label", "היום"));
+    list.appendChild(li);
+  };
+  let todayShown = false;
+  for (const event of events) {
+    const future = event.date.sort > today;
+    if (future && !todayShown) {
+      appendToday();
+      todayShown = true;
+    }
+    const li = el("li", `tl-item tl-${event.tone || "plain"}${future ? " tl-future" : ""}`);
+    li.appendChild(el("span", "tl-dot"));
+    const line = el("div", "tl-line");
+    line.append(el("span", "tl-date", event.date.display), el("span", "tl-label", event.label));
+    li.appendChild(line);
+    if (event.detail) li.appendChild(el("div", "tl-detail", event.detail));
+    list.appendChild(li);
+  }
+  if (!todayShown) appendToday();
+  timelineBox.replaceChildren(el("strong", null, "סיפור הרכב"), list);
+  timelineBox.classList.remove("hidden");
+}
+
+// אירועי הבסיס הנגזרים מרשומת הרכב עצמה (סינכרוני): עלייה לכביש, טסט
+// אחרון, ביטול (אם קיים) ותוקף הרישיון — עתידי כצפי, עבר כפג-תוקף
+function baseTimelineEvents(record) {
+  const events = [];
+  const aliya = timelineDate(record.moed_aliya_lakvish);
+  if (aliya) events.push({ key: "start", date: aliya, label: "עלה לכביש" });
+  const test = timelineDate(record.mivchan_acharon_dt);
+  if (test) events.push({ key: "test", date: test, label: "עבר טסט", tone: "good" });
+  const bitul = timelineDate(record.bitul_dt);
+  if (bitul && String(record.bitul_cd ?? "").trim() !== "0") {
+    const reason = String(record.bitul_nm || "").trim();
+    events.push({ key: "bitul", date: bitul, label: reason && !/^(לא|ללא)/.test(reason) ? reason : "בוטל סופית", tone: "bad" });
+  }
+  const tokef = timelineDate(record.tokef_dt);
+  if (tokef) {
+    events.push(tokef.sort >= todaySortValue()
+      ? { key: "tokef", date: tokef, label: "תוקף רישיון הרכב", tone: "good" }
+      : { key: "tokef", date: tokef, label: "פג תוקף רישיון הרכב", tone: "bad" });
+  }
+  return events;
+}
+
 /* ---------- העשרות (בקשות מקבילות אחרי מציאת הרכב) ---------- */
 
 // דגלי מערכות הבטיחות בטבלת הדגמים (ערך 1 = מותקן)
@@ -1070,7 +1193,7 @@ const HISTORY_FLAGS = [
 // כשהתשובות מגיעות השלד מוסר, ואם אין שום תוכן הסעיף כולו נעלם
 function prepareHistoryBox() {
   historyBox.replaceChildren(el("strong", null, "היסטוריית הרכב"));
-  for (const key of ["km", "facts", "flags", "owners", "nodata"]) {
+  for (const key of ["km", "facts", "flags", "nodata"]) {
     const slot = el("div", `history-slot history-${key}`);
     slot.dataset.history = key;
     slot.hidden = true;
@@ -1092,7 +1215,13 @@ function showHistorySlot(key) {
 }
 
 function renderVehicleHistory(record) {
+  // רישום ראשון מדויק מחליף את אירוע "עלה לכביש" החודשי על ציר הזמן,
+  // ומד האוץ מצטרף כפרט לאירוע הטסט האחרון
+  const firstReg = timelineDate(record.rishum_rishon_dt);
+  if (firstReg) addTimelineEvents([{ key: "start", date: firstReg, label: "עלה לכביש" }]);
+
   const km = formatKm(record.kilometer_test_aharon);
+  if (km) addTimelineDetail("test", `מד אוץ: ${km} ק"מ`);
   if (km) {
     const slot = showHistorySlot("km");
     slot.append(
@@ -1141,21 +1270,16 @@ function renderHistoryNoData() {
   );
 }
 
+// החלפות הבעלות מוצגות כאירועי "יד N" על ציר הזמן (במקום רשימה נפרדת),
+// והספירה ממלאת את צ'יפ היד בשורת התמצית
 function renderOwnershipHistory(records) {
   if (!records.length) return;
   const sorted = [...records].sort((a, b) => Number(a.baalut_dt) - Number(b.baalut_dt));
   fillVerdict("hands", `יד ${sorted.length}`, "info");
-
-  const head = el("div", "history-owners-head");
-  head.append(el("span", null, "החלפות בעלות"), el("span", "hand-badge", `יד ${sorted.length}`));
-
-  const list = el("ol", "history-owners-list");
-  for (const row of sorted) {
-    const when = formatYearMonthInt(row.baalut_dt);
-    list.appendChild(el("li", null, when ? `${when} — ${row.baalut || ""}` : String(row.baalut || "")));
-  }
-
-  showHistorySlot("owners").append(head, list);
+  addTimelineEvents(sorted.map((row, index) => ({
+    date: timelineDate(row.baalut_dt),
+    label: row.baalut ? `יד ${index + 1} — ${row.baalut}` : `יד ${index + 1}`,
+  })));
 }
 
 /* ---------- חיווים נקודתיים (בקשה אחת לכל מאגר, מוצג רק בהתאמה) ---------- */
@@ -1533,6 +1657,11 @@ function startEnrichments(record, plateNumber, options, token) {
   // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה
   renderVinCheck(record);
 
+  // ציר הזמן נפתח מיד עם אירועי הבסיס מהרשומה; החלפות בעלות, ריקולים
+  // ומד האוץ מצטרפים כשתשובות ההעשרה חוזרות
+  prepareTimeline();
+  addTimelineEvents(baseTimelineEvents(record));
+
   const joinFilters = modelJoinFilters(record);
   const wantWltp = options.wltp && joinFilters;
   const wantPrice = options.priceList && joinFilters;
@@ -1645,6 +1774,11 @@ function startEnrichments(record, plateNumber, options, token) {
           records.length === 1 ? "⚠️ ריקול פתוח" : `⚠️ ${records.length} ריקולים פתוחים`,
           "warn",
         );
+        addTimelineEvents(records.map((recall) => ({
+          date: timelineDate(recall.TAARICH_PTICHA),
+          label: "נפתחה קריאת ריקול",
+          tone: "warn",
+        })));
         const recallIds = [...new Set(records.map((r) => r.RECALL_ID).filter((id) => id != null))];
         if (!recallIds.length) return;
         ckanSearch(RESOURCES.recallDetails, { RECALL_ID: recallIds }, recallIds.length)
