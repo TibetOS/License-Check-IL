@@ -547,14 +547,6 @@ body {
   font-size: 0.72rem;
 }
 
-/* תשובה שלילית מוסמכת ("אין תו נכה") — עובדה שקטה, לא התרעה */
-.chip-muted {
-  background: #f4f4f5;
-  color: #71717a;
-  border: 1px solid #e4e4e7;
-  font-weight: 500;
-}
-
 .indicators {
   margin-top: 16px;
 }
@@ -855,23 +847,6 @@ body {
   margin-top: 4px;
   color: var(--muted);
   font-size: 0.75rem;
-}
-
-/* שורת התמצית — צ'יפי טסט / ריקולים / יד מתחת לכותרת הכרטיס */
-.verdict {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
-.verdict.hidden {
-  display: none;
-}
-
-.verdict .chip {
-  margin: 0;
 }
 
 .share-btn {
