@@ -749,6 +749,7 @@ const MAKER_EN = {
   "מ.ג": "MG", "מאן": "MAN", "מזארטי": "Maserati", "מזדה": "Mazda",
   "מיני": "Mini", "מיצובישי": "Mitsubishi", "מקלארין": "McLaren",
   "מקסוס": "Maxus", "מרצדס": "Mercedes-Benz", "ניאו": "NIO", "ניסאן": "Nissan",
+  "מרוטי-סוזוקי": "Suzuki",
   "סאאב": "Saab", "סאנגיונג": "SsangYong", "סובארו": "Subaru", "סוזוקי": "Suzuki",
   "סיאט": "SEAT", "סיטרואן": "Citroen", "סמארט": "Smart", "סקודה": "Skoda",
   "פולסטאר": "Polestar", "פולקסווגן": "Volkswagen", "פורד": "Ford",
@@ -2104,8 +2105,16 @@ function refreshMyCarButton() {
 
 // נקרא בכל תוצאה: מעדכן את המועמד לשמירה, ואם זה הרכב השמור — מרענן
 // את הנתונים השמורים (כותרת ותוקף) מהבדיקה הטרייה
-function updateMyCarCandidate(digits, title, tokefDt) {
-  myCarCandidate = { p: digits, l: title || "", tokef: tokefDt || null };
+function updateMyCarCandidate(digits, title, tokefDt, record) {
+  myCarCandidate = {
+    p: digits,
+    l: title || "",
+    tokef: tokefDt || null,
+    // מפתחות זיהוי התמונה/לוגו בפאנל — נגזרים כמו ב-fetchVehicleImage.
+    // רכב שנשמר לפני התוספת הזו יקבל אותם ברענון הבא של הבדיקה
+    mk: record ? makerEnglish(record.tozeret_nm) : null,
+    kn: record ? normalizeForMatch(String(record.kinuy_mishari || "").trim()) || null : null,
+  };
   const saved = loadMyCar();
   if (saved && saved.p === digits) {
     saveMyCar(myCarCandidate);
@@ -2186,6 +2195,23 @@ function renderMyCarPanel() {
   head.appendChild(removeBtn);
 
   const row = el("div", "mycar-row");
+
+  // תמונת הדגם מהמאגר המקומי — או לוגו היצרן כשאין תמונה. נחשפת רק
+  // אחרי טעינה מוצלחת; ברכב שמור ישן (בלי מפתחות) פשוט לא מוצג דבר
+  const thumb = el("img", "mycar-thumb hidden");
+  thumb.alt = "";
+  thumb.decoding = "async";
+  row.appendChild(thumb);
+  loadModelImageIndex().then((index) => {
+    const entry = index && car.kn ? index[`${car.mk}|${car.kn}`] : null;
+    const src = entry ? `model-images/${entry.f}` : brandLogoPath(car.mk);
+    if (!src) return;
+    if (entry) thumb.title = `צילום: ${entry.c} · ${entry.l}`;
+    thumb.classList.toggle("mycar-thumb-logo", !entry);
+    thumb.onload = () => thumb.classList.remove("hidden");
+    thumb.src = src;
+  });
+
   const checkBtn = el("button", "recent-chip");
   checkBtn.type = "button";
   const plateSpan = el("span", "recent-plate", formatPlate(car.p));
@@ -2415,7 +2441,7 @@ async function runSearch(digits) {
         rows: mainRegistryRows(record),
       });
       addRecent(digits, vehicleTitle(record));
-      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
+      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt, record);
       startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true, renewal: true }, token);
       return;
     }
@@ -2443,7 +2469,7 @@ async function runSearch(digits) {
         rows: fallback.rows(record),
       });
       addRecent(digits, vehicleTitle(record));
-      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
+      updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt, record);
       startEnrichments(record, plateNumber, fallback.enrich, token);
       return;
     }
