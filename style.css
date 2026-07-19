@@ -382,6 +382,67 @@ body {
   font-size: 0.85rem;
 }
 
+/* חידוש רישיון רכב — קופסת פעולה: כחולה רכה כשהתוקף מסתיים בקרוב,
+   כתומה כשהרישיון פג */
+.renewal {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.renewal.hidden {
+  display: none;
+}
+
+.renewal-soon {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
+.renewal-expired {
+  background: var(--warn-bg);
+  border: 1px solid #fde68a;
+  color: var(--warn-text);
+}
+
+.renewal-msg {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+}
+
+.renewal-steps {
+  margin: 8px 0 0;
+  padding-inline-start: 20px;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.renewal-substep {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.renewal a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.renewal-note {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+/* קיצור התשלום בפאנל "הרכב שלי" — צ'יפ-קישור */
+.mycar-renew {
+  text-decoration: none;
+  color: inherit;
+}
+
 /* סיפור הרכב — ציר זמן אנכי: קו לאורך צד הפתיחה, נקודה צבועה לפי
    אופי האירוע, ואירועים עתידיים (תוקף הרישיון) מעבר לסמן "היום" */
 .timeline {
