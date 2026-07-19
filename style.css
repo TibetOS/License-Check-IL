@@ -795,7 +795,7 @@ body {
   border: 1px solid var(--border);
 }
 
-.mycar-thumb-logo {
+.mycar-thumb.mycar-thumb-logo {
   width: 64px;
   height: 44px;
   object-fit: contain;
