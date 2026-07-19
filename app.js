@@ -2121,10 +2121,17 @@ function renderMyCarPanel() {
     row.appendChild(icsBtn);
   }
 
-  // כשהתוקף מסתיים בקרוב (או פג) — קיצור דרך לתשלום האגרה
+  // כשהתוקף מסתיים בקרוב (או פג) — קיצור דרך לחידוש. אחרי יותר משנה
+  // התשלום המקוון בדרך כלל לא מספיק (כמו בקופסת החידוש) — מפנים לעמוד
+  // הרשמי במקום לשירות התשלומים
   if (remindDays != null && remindDays <= EXPIRY_SOON_DAYS) {
-    const renew = el("a", "recent-chip mycar-renew", "💳 לתשלום ולחידוש");
-    renew.href = RENEWAL_PAY_URL;
+    const longExpired = remindDays < -365;
+    const renew = el(
+      "a",
+      "recent-chip mycar-renew",
+      longExpired ? "ℹ️ חידוש מול משרד הרישוי" : "💳 לתשלום ולחידוש",
+    );
+    renew.href = longExpired ? RENEWAL_INFO_URL : RENEWAL_PAY_URL;
     renew.target = "_blank";
     renew.rel = "noopener";
     row.appendChild(renew);
