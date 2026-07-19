@@ -1004,7 +1004,9 @@ function showVehicleImage(src, title, articleUrl, credit) {
   // התמונה נחשפת רק אחרי שנטענה בפועל — בלי מסגרת ריקה או אייקון שבור
   img.onload = () => vehicleImageBox.classList.remove("hidden");
   img.alt = `תמונה להמחשה: ${title}`;
+  // בלי כתובת ערך — הקישור מוסר, שלא יישאר href ישן מחיפוש קודם
   if (articleUrl) link.href = articleUrl;
+  else link.removeAttribute("href");
   caption.replaceChildren();
   if (credit) {
     caption.append("תמונה להמחשה בלבד · ");
