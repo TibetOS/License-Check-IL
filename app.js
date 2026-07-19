@@ -1024,9 +1024,14 @@ function showVehicleImage(src, title, articleUrl, credit) {
    לצדן באינדקס. דגם שאינו באינדקס ממשיך למסלול ויקיפדיה הרגיל */
 let modelImageIndexPromise = null;
 function loadModelImageIndex() {
+  // כשל בטעינה (רשת רגעית/לא-מקוון) אינו נשמר במטמון — הפרומיס מאופס
+  // כדי שהחיפוש הבא ינסה לטעון את האינדקס מחדש
   modelImageIndexPromise ||= fetch("model-images/index.json")
-    .then((response) => (response.ok ? response.json() : null))
-    .catch(() => null);
+    .then((response) => (response.ok ? response.json() : Promise.reject()))
+    .catch(() => {
+      modelImageIndexPromise = null;
+      return null;
+    });
   return modelImageIndexPromise;
 }
 
