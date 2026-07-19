@@ -993,14 +993,41 @@ function normalizeForMatch(text) {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function showVehicleImage(src, title, articleUrl) {
+// credit (אופציונלי): ייחוס לתמונה מקומית — {c: צלם, l: רישיון, d: קישור
+// לעמוד הקובץ}. רישיונות CC מחייבים ציון היוצר והרישיון, ולכן הכיתוב
+// מוחלף בשורת ייחוס מקושרת; בלי credit מוצג הכיתוב הכללי של ויקיפדיה
+function showVehicleImage(src, title, articleUrl, credit) {
   const img = vehicleImageBox.querySelector("img");
   const link = vehicleImageBox.querySelector("a");
+  const caption = vehicleImageBox.querySelector("figcaption");
   // התמונה נחשפת רק אחרי שנטענה בפועל — בלי מסגרת ריקה או אייקון שבור
   img.onload = () => vehicleImageBox.classList.remove("hidden");
   img.alt = `תמונה להמחשה: ${title}`;
   if (articleUrl) link.href = articleUrl;
+  caption.replaceChildren();
+  if (credit) {
+    caption.append("תמונה להמחשה בלבד · ");
+    const creditLink = el("a", null, `צילום: ${credit.c} · ${credit.l}`);
+    creditLink.href = credit.d;
+    creditLink.target = "_blank";
+    creditLink.rel = "noopener";
+    caption.appendChild(creditLink);
+  } else {
+    caption.textContent = "תמונה להמחשה בלבד · מתוך ויקיפדיה";
+  }
   img.src = src;
+}
+
+/* תמונות הדגמים הנפוצים שמורות בריפו עצמו (model-images/‏, ~150 דגמים
+   שמכסים כ-60% מהרכבים בכביש) — נטענות מאותו origin בלי לשלוח את שם
+   הדגם לאף שרת חיצוני, עובדות גם ללא רשת, והייחוס (צלם + רישיון) שמור
+   לצדן באינדקס. דגם שאינו באינדקס ממשיך למסלול ויקיפדיה הרגיל */
+let modelImageIndexPromise = null;
+function loadModelImageIndex() {
+  modelImageIndexPromise ||= fetch("model-images/index.json")
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+  return modelImageIndexPromise;
 }
 
 async function fetchVehicleImage(record, guard) {
@@ -1008,6 +1035,15 @@ async function fetchVehicleImage(record, guard) {
   const make = makerEnglish(record.tozeret_nm);
   const normKinuy = normalizeForMatch(kinuy);
   if (!normKinuy) return;
+
+  // קודם האינדקס המקומי — התאמה מדויקת לפי יצרן+כינוי
+  const index = await loadModelImageIndex();
+  const local = index ? index[`${make}|${normKinuy}`] : null;
+  if (local) {
+    guard(() => showVehicleImage(`model-images/${local.f}`, local.t, local.a, local))();
+    return;
+  }
+
   // בלי יצרן מזוהה — שאילתה רק כשהכינוי ייחודי דיו (לא "3" וכד')
   if (!make && normKinuy.length < 4) return;
 
