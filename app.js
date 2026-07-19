@@ -1036,15 +1036,30 @@ function loadModelImageIndex() {
   return modelImageIndexPromise;
 }
 
+// בחירת תמונה לדגם לפי שנת הייצור: רשומת אינדקס היא {d: ברירת מחדל,
+// g: [[משנה, עד-שנה|null, תמונה], ...]} — הדורות ממוינים מהחדש לישן,
+// כך ששנת גבול בין דורות משויכת לדור החדש. בלי התאמת דור — ברירת המחדל
+function pickModelImage(indexEntry, year) {
+  if (!indexEntry) return null;
+  const y = Number(year);
+  if (Array.isArray(indexEntry.g) && Number.isFinite(y) && y > 1900) {
+    for (const [from, until, image] of indexEntry.g) {
+      if (y >= from && (until == null || y <= until)) return image;
+    }
+  }
+  return indexEntry.d || null;
+}
+
 async function fetchVehicleImage(record, guard) {
   const kinuy = String(record.kinuy_mishari || "").trim();
   const make = makerEnglish(record.tozeret_nm);
   const normKinuy = normalizeForMatch(kinuy);
   if (!normKinuy) return;
 
-  // קודם האינדקס המקומי — התאמה מדויקת לפי יצרן+כינוי
+  // קודם האינדקס המקומי — התאמה מדויקת לפי יצרן+כינוי, ובחירת הדור
+  // הנכון לפי שנת הייצור
   const index = await loadModelImageIndex();
-  const local = index ? index[`${make}|${normKinuy}`] : null;
+  const local = index ? pickModelImage(index[`${make}|${normKinuy}`], record.shnat_yitzur) : null;
   if (local) {
     guard(() => showVehicleImage(`model-images/${local.f}`, local.t, local.a, local))();
     return;
@@ -2114,6 +2129,7 @@ function updateMyCarCandidate(digits, title, tokefDt, record) {
     // רכב שנשמר לפני התוספת הזו יקבל אותם ברענון הבא של הבדיקה
     mk: record ? makerEnglish(record.tozeret_nm) : null,
     kn: record ? normalizeForMatch(String(record.kinuy_mishari || "").trim()) || null : null,
+    y: record && record.shnat_yitzur != null ? Number(record.shnat_yitzur) : null,
   };
   const saved = loadMyCar();
   if (saved && saved.p === digits) {
@@ -2203,7 +2219,7 @@ function renderMyCarPanel() {
   thumb.decoding = "async";
   row.appendChild(thumb);
   loadModelImageIndex().then((index) => {
-    const entry = index && car.kn ? index[`${car.mk}|${car.kn}`] : null;
+    const entry = index && car.kn ? pickModelImage(index[`${car.mk}|${car.kn}`], car.y) : null;
     const src = entry ? `model-images/${entry.f}` : brandLogoPath(car.mk);
     if (!src) return;
     if (entry) thumb.title = `צילום: ${entry.c} · ${entry.l}`;
