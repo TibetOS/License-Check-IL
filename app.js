@@ -793,12 +793,20 @@ const BRAND_LOGO_SLUGS = new Set([
 
 function brandLogoPath(enBrand) {
   if (!enBrand) return null;
-  const slug = enBrand.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-");
+  const slug = String(enBrand)
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   return BRAND_LOGO_SLUGS.has(slug) ? `logos/${slug}.png` : null;
 }
 
 function renderBrandLogo(record) {
-  const path = brandLogoPath(makerEnglish(record.tozeret_nm));
+  // כלי צמ"ה שומר את שם היצרן באנגלית בשדה נפרד (shilda_totzar_en_nm) —
+  // כך מלגזת TOYOTA או VOLVO מקבלת את הלוגו הנכון. התאמה חלקית אינה
+  // אפשרית: רק שם שנגזר בדיוק לקובץ קיים מציג לוגו
+  const enBrand = makerEnglish(record.tozeret_nm) || record.shilda_totzar_en_nm;
+  const path = brandLogoPath(enBrand);
   if (!path) return;
   // הלוגו נחשף רק אחרי שנטען בפועל — קובץ חסר לא משאיר אייקון שבור.
   // הלוגו דקורטיבי (שם היצרן ממילא כתוב בכותרת), ולכן alt ריק
