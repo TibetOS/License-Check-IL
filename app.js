@@ -43,6 +43,7 @@ const resultTitle = document.getElementById("result-title");
 const resultSubtitle = document.getElementById("result-subtitle");
 const vehicleImageBox = document.getElementById("vehicle-image");
 const resultDetails = document.getElementById("result-details");
+const renewalBox = document.getElementById("renewal-box");
 const timelineBox = document.getElementById("timeline-box");
 const historyBox = document.getElementById("history-box");
 const indicatorBox = document.getElementById("indicator-box");
@@ -315,7 +316,7 @@ function hideResult() {
   vehicleImg.onload = null;
   vehicleImg.removeAttribute("src");
   vehicleImageBox.classList.add("hidden");
-  for (const box of [timelineBox, historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
+  for (const box of [renewalBox, timelineBox, historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
     box.replaceChildren();
   }
@@ -652,7 +653,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב נרשם בישראל בהליך של יבוא אישי",
     },
     rows: personalImportRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, renewal: true },
   },
   {
     resourceId: RESOURCES.publicTransport,
@@ -1637,6 +1638,9 @@ function startEnrichments(record, plateNumber, options, token) {
   // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
   // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה
   renderVinCheck(record);
+  // קופסת חידוש הרישיון — רק במאגרים שבהם רישיון פג הוא מצב שאפשר
+  // ומוטב לתקן (רכב פעיל בבעלות פרטית); רכב מבוטל/לא-פעיל מקבל באנר
+  if (options.renewal) renderRenewalBox(record);
 
   // ציר הזמן נפתח מיד עם אירועי הבסיס מהרשומה; החלפות בעלות, ריקולים
   // ומד האוץ מצטרפים כשתשובות ההעשרה חוזרות
@@ -1893,6 +1897,85 @@ shareBtn.addEventListener("click", async () => {
   }
 });
 
+/* ---------- חידוש רישיון רכב ----------
+   "פג תוקף" בלי צעד הבא הוא אבחנה שנוטשת את המשתמש. כשהרישיון פג (או
+   מסתיים בקרוב) מוצגת קופסת פעולה עם שלושת שלבי החידוש וקישור לתשלום
+   האגרה בשירות הממשלתי. הטון מדורג לפי גיל הפקיעה, ולפקיעה של יותר
+   משנה אין רשימת שלבים — שם החידוש בדרך כלל דורש טיפול במשרד הרישוי,
+   ועדיף להפנות לעמוד הרשמי מאשר להעמיד פנים שהתהליך המקוון מספיק.
+   מידע כללי בלבד — לא ייעוץ משפטי */
+
+const RENEWAL_PAY_URL = "https://ecom.gov.il/voucherspa/input/260";
+const RENEWAL_INFO_URL = "https://www.gov.il/he/service/car_licence_renewal";
+
+function renewalLink(text, href) {
+  const link = el("a", null, text);
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  return link;
+}
+
+function renewalSteps() {
+  const list = el("ol", "renewal-steps");
+  const pay = el("li");
+  pay.append(
+    renewalLink("תשלום אגרת הרישוי בשירות התשלומים הממשלתי", RENEWAL_PAY_URL),
+    el("span", "renewal-substep", " — אפשר גם בטלפון 5678*, ובפריסה של עד 12 תשלומים"),
+  );
+  list.append(
+    pay,
+    el("li", null, "ביטוח חובה בתוקף — נדרש בכניסה לטסט"),
+    el("li", null, "טסט במכון רישוי, עם אישור התשלום ותעודת הביטוח"),
+  );
+  return list;
+}
+
+function renderRenewalBox(record) {
+  const days = daysUntil(record.tokef_dt);
+  if (days == null || days > EXPIRY_SOON_DAYS) return;
+  renewalBox.replaceChildren();
+  renewalBox.classList.remove("renewal-soon", "renewal-expired");
+
+  if (days >= 0) {
+    // מסתיים בקרוב — תזכורת רכה: אפשר לשלם כבר עכשיו
+    renewalBox.classList.add("renewal-soon");
+    renewalBox.append(
+      el("strong", null, days === 0
+        ? "🗓 רישיון הרכב מסתיים היום — אפשר לחדש אונליין"
+        : `🗓 רישיון הרכב מסתיים בקרוב — אפשר לחדש כבר עכשיו`),
+      renewalSteps(),
+      el("p", "renewal-note", "טיפ: כפתור ⭐ שומר את הרכב ומציע תזכורת ליומן לקראת הטסט הבא"),
+    );
+  } else if (days >= -365) {
+    renewalBox.classList.add("renewal-expired");
+    let message;
+    if (days >= -30) {
+      message = "אסור לנהוג ברכב ללא רישיון בתוקף — החידוש אונליין לוקח דקות:";
+    } else if (days >= -180) {
+      message = "הרישיון פג לפני יותר מחודש — נהיגה במצב הזה חושפת לקנס. כך מחדשים:";
+    } else {
+      message = "הרישיון פג לפני יותר מחצי שנה — מעבר לקנס, קיים סיכון להזמנה לדין ולהורדת הרכב מהכביש. כך מחדשים:";
+    }
+    renewalBox.append(
+      el("strong", null, "⚠️ רישיון הרכב פג — כך מסדרים את זה"),
+      el("p", "renewal-msg", message),
+      renewalSteps(),
+      el("p", "renewal-note", "מידע כללי בלבד — ההנחיות המחייבות באתר משרד התחבורה"),
+    );
+  } else {
+    renewalBox.classList.add("renewal-expired");
+    const message = el("p", "renewal-msg", "במצב כזה החידוש בדרך כלל אינו מסתיים אונליין ונדרש טיפול מול משרד הרישוי. ");
+    message.appendChild(renewalLink("לפרטים באתר משרד התחבורה", RENEWAL_INFO_URL));
+    renewalBox.append(
+      el("strong", null, "רישיון הרכב פג לפני יותר משנה"),
+      message,
+      el("p", "renewal-note", "מידע כללי בלבד — ההנחיות המחייבות באתר משרד התחבורה"),
+    );
+  }
+  renewalBox.classList.remove("hidden");
+}
+
 /* ---------- הרכב שלי ----------
    שמירה מקומית (localStorage בלבד) של רכב אחד — בדרך כלל הרכב של
    המשתמש עצמו: כפתור ⭐ בכרטיס שומר, ופאנל במסך הבית מציג את הרכב עם
@@ -2036,6 +2119,15 @@ function renderMyCarPanel() {
     icsBtn.type = "button";
     icsBtn.addEventListener("click", () => downloadTestReminder(car));
     row.appendChild(icsBtn);
+  }
+
+  // כשהתוקף מסתיים בקרוב (או פג) — קיצור דרך לתשלום האגרה
+  if (remindDays != null && remindDays <= EXPIRY_SOON_DAYS) {
+    const renew = el("a", "recent-chip mycar-renew", "💳 לתשלום ולחידוש");
+    renew.href = RENEWAL_PAY_URL;
+    renew.target = "_blank";
+    renew.rel = "noopener";
+    row.appendChild(renew);
   }
 
   myCarSection.append(head, row);
@@ -2229,7 +2321,7 @@ async function runSearch(digits) {
       });
       addRecent(digits, vehicleTitle(record));
       updateMyCarCandidate(digits, vehicleTitle(record), record.tokef_dt);
-      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true }, token);
+      startEnrichments(record, plateNumber, { continuation: true, wltp: true, priceList: true, recalls: true, rarity: true, renewal: true }, token);
       return;
     }
 
