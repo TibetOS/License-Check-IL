@@ -40,6 +40,7 @@ const resultCard = document.getElementById("result");
 const resultBanner = document.getElementById("result-banner");
 const resultPlate = document.getElementById("result-plate");
 const resultTitle = document.getElementById("result-title");
+const brandLogo = document.getElementById("brand-logo");
 const resultSubtitle = document.getElementById("result-subtitle");
 const vehicleImageBox = document.getElementById("vehicle-image");
 const resultDetails = document.getElementById("result-details");
@@ -312,6 +313,9 @@ function hideResult() {
   resultDetails.replaceChildren();
   resultSubtitle.classList.add("hidden");
   resultSubtitle.textContent = "";
+  brandLogo.onload = null;
+  brandLogo.removeAttribute("src");
+  brandLogo.classList.add("hidden");
   const vehicleImg = vehicleImageBox.querySelector("img");
   vehicleImg.onload = null;
   vehicleImg.removeAttribute("src");
@@ -766,6 +770,48 @@ function makerEnglish(tozeretNm) {
     }
   }
   return best ? MAKER_EN[best] : null;
+}
+
+/* ---------- לוגו היצרן ----------
+   סמל היצרן מוצג בכותרת הכרטיס. הקבצים שמורים בריפו עצמו (תיקיית logos/‏,
+   מתוך car-logos-dataset) — נטענים מאותו origin, בלי בקשה לשרת חיצוני
+   ובלי לשלוח לאף גורם מה חיפשנו. שם הקובץ נגזר מהשם האנגלי של היצרן;
+   יצרן בלי קובץ לוגו (יצרני דו-גלגלי וכד') פשוט אינו מציג לוגו */
+
+const BRAND_LOGO_SLUGS = new Set([
+  "alfa-romeo", "aston-martin", "audi", "bentley", "bmw", "buick", "byd",
+  "cadillac", "chery", "chevrolet", "chrysler", "citroen", "cupra", "dacia",
+  "daihatsu", "dodge", "dongfeng", "ferrari", "fiat", "ford", "geely",
+  "great-wall", "honda", "hyundai", "infiniti", "isuzu", "iveco", "jaguar",
+  "jeep", "kia", "lamborghini", "land-rover", "leapmotor", "lexus", "lincoln",
+  "lotus", "lynk-and-co", "man", "maserati", "maxus", "mazda", "mclaren",
+  "mercedes-benz", "mg", "mini", "mitsubishi", "nio", "nissan", "omoda",
+  "opel", "peugeot", "polestar", "porsche", "renault", "rolls-royce", "rover",
+  "saab", "seat", "skoda", "smart", "ssangyong", "subaru", "suzuki", "tesla",
+  "toyota", "volkswagen", "volvo", "xpeng", "zeekr",
+]);
+
+function brandLogoPath(enBrand) {
+  if (!enBrand) return null;
+  const slug = String(enBrand)
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return BRAND_LOGO_SLUGS.has(slug) ? `logos/${slug}.png` : null;
+}
+
+function renderBrandLogo(record) {
+  // כלי צמ"ה שומר את שם היצרן באנגלית בשדה נפרד (shilda_totzar_en_nm) —
+  // כך מלגזת TOYOTA או VOLVO מקבלת את הלוגו הנכון. התאמה חלקית אינה
+  // אפשרית: רק שם שנגזר בדיוק לקובץ קיים מציג לוגו
+  const enBrand = makerEnglish(record.tozeret_nm) || record.shilda_totzar_en_nm;
+  const path = brandLogoPath(enBrand);
+  if (!path) return;
+  // הלוגו נחשף רק אחרי שנטען בפועל — קובץ חסר לא משאיר אייקון שבור.
+  // הלוגו דקורטיבי (שם היצרן ממילא כתוב בכותרת), ולכן alt ריק
+  brandLogo.onload = () => brandLogo.classList.remove("hidden");
+  brandLogo.src = path;
 }
 
 /* ---------- זיהוי יצרן לפי מספר השלדה (VIN) ----------
@@ -1634,6 +1680,7 @@ function startEnrichments(record, plateNumber, options, token) {
   const plateKeyed = options.plateKeyed !== false;
 
   renderStory(record);
+  renderBrandLogo(record);
   fetchVehicleImage(record, guard);
   // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
   // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה

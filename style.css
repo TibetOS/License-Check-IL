@@ -872,6 +872,17 @@ body {
   font-size: 1.25rem;
 }
 
+/* לוגו היצרן — קובץ מקומי מהריפו, נחשף רק אחרי טעינה מוצלחת */
+.brand-logo {
+  height: 44px;
+  max-width: 110px;
+  object-fit: contain;
+}
+
+.brand-logo.hidden {
+  display: none;
+}
+
 /* שורת הסיפור — גיל ובעלות במשפט מעומעם מתחת לכותרת */
 .result-subtitle {
   margin: 0;
