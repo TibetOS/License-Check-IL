@@ -23,8 +23,9 @@ const TESSERACT_CACHE_PATH = "tessdata-fast-4.1.0";
 // כדי לא ליצור בטעות מסד ריק שישבור את המטמון של הספרייה
 function purgeLegacyOcrCache() {
   try {
+    if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
     indexedDB
-      .databases?.()
+      .databases()
       .then((dbs) => {
         if (!dbs?.some((db) => db.name === "keyval-store")) return;
         const open = indexedDB.open("keyval-store");
@@ -879,7 +880,7 @@ async function handlePhotoFile(file) {
       .sort((a, b) => readCounts.get(b) - readCounts.get(a))
       .slice(0, 4);
     // הסכמה בין שתי הקריאות של אזור — מקבלים אותה ומתעלמים מקריאות יחיד
-    if (readCounts.get(candidates[0]) >= 2) candidates = candidates.slice(0, 1);
+    if (candidates.length && readCounts.get(candidates[0]) >= 2) candidates = candidates.slice(0, 1);
 
     // נפילה לאחור בלי אזור צהוב שמיש: פילוח עמוד אוטומטי (PSM 3) על
     // התמונה כולה. מצבי הטקסט-הפזור (11/12) מחזירים ריק בשילוב עם רשימת
