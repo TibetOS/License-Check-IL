@@ -357,6 +357,7 @@ const ROW_INFO = {
   "דירוג צמיגים": ["העומס והמהירות המרביים המותרים לצמיג, מפוענחים מהקוד המוטבע על דופן הצמיג (תקן ETRTO).", "מאגר הרישוי (קובץ המשך), משרד התחבורה"],
   "מדד ירוק": ["ציון סביבתי משוקלל של הדגם — ככל שהמספר נמוך יותר, הרכב מזהם פחות.", SOURCE_WLTP],
   "קבוצת אגרת רישוי": ["קבוצת המחיר של אגרת הרישוי השנתית — נקבעת לפי מחיר הרכב ורמת הזיהום שלו.", SOURCE_WLTP],
+  "אגרת רישוי שנתית": ["סכום משוער של אגרת הרישוי (\"אגרת הטסט\") — לפי קבוצת האגרה ושנת הייצור בתעריף הרשמי, לפני הנחות אישיות (נכות, מילואים וכד'). הסכום המחייב מוצג בשירות התשלומים הממשלתי.", "תעריף אגרות הרכב של משרד התחבורה, בתוקף מ-01.04.2026"],
   "ניקוד בטיחות": ["ניקוד מערכות הבטיחות המותקנות בדגם; ככל שגבוה יותר — אבזור הבטיחות עשיר יותר.", SOURCE_WLTP],
   "רמת אבזור בטיחותי": ["דירוג משרד התחבורה לאבזור הבטיחות של הדגם, בסולם 0 עד 8.", SOURCE_WLTP],
   "טכנולוגיית הנעה": ["סוג מערכת ההנעה: בנזין/דיזל רגיל, היברידי, פלאג-אין או חשמלי מלא.", SOURCE_WLTP],
@@ -485,6 +486,7 @@ function motorcycleRows(record) {
     ["הספק", withUnit(record.hespek, 'כ"ס')],
     ["רישיון נדרש (משוער)", motorcycleLicense(record), { skip: true }],
     ["סוג דלק", record.sug_delek_nm],
+    ["אגרת רישוי שנתית", formatAgra(motorcycleAgra(record)), { skip: true }],
     ["מספר מקומות", record.mispar_mekomot, { skip: true }],
     ["משקל כולל", withUnit(positiveNumber(record.mishkal_kolel), 'ק"ג'), { skip: true }],
     ["בעלות", record.baalut],
@@ -554,6 +556,7 @@ function heavyTruckRows(record) {
     ["שנת ייצור", record.shnat_yitzur],
     ["ארץ ייצור", record.tozeret_eretz_nm, { skip: true }],
     ["סוג דלק", record.sug_delek_nm],
+    ["אגרת רישוי שנתית", formatAgra(heavyTruckAgra(record)), { skip: true }],
     ["נפח מנוע", withUnit(positiveNumber(record.nefach_manoa), 'סמ"ק'), { skip: true }],
     ["דגם מנוע", record.degem_manoa, { skip: true, ltr: true }],
     ["מספר שלדה", record.mispar_shilda, { skip: true, ltr: true }],
@@ -1440,6 +1443,8 @@ function renderPermit(permit) {
   if (parts.length) {
     permitBox.appendChild(el("p", null, parts.join(" · ")));
   }
+  // רכב של נכה זכאי לאגרת רישוי מופחתת לפי התעריף הרשמי
+  permitBox.appendChild(el("p", "permit-agra", `בעל תו נכה עשוי להיות זכאי לאגרת רישוי שנתית מופחתת של 30 ₪ (${AGRA_TARIFF_LABEL})`));
   permitBox.classList.remove("hidden");
 }
 
@@ -1582,6 +1587,7 @@ const WLTP_ROWS = [
   ["פליטת CO₂", (m) => withUnit(m.CO2_WLTP ?? m.kamut_CO2, 'גר׳/ק"מ')],
   ["מדד ירוק", (m) => m.madad_yarok],
   ["קבוצת אגרת רישוי", (m) => m.kvuzat_agra_cd],
+  ["אגרת רישוי שנתית", (m) => formatAgra(privateAgra(m.kvuzat_agra_cd, m.shnat_yitzur))],
   ["ניקוד בטיחות", (m) => m.nikud_betihut],
   ["רמת אבזור בטיחותי", (m) => m.ramat_eivzur_betihuty],
 ];
@@ -1794,6 +1800,8 @@ function startEnrichments(record, plateNumber, options, token) {
         if (!records[0]) return;
         fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
         renderSafetyEquipment(records[0]);
+        // סכום האגרה מצטרף לקופסת החידוש אם היא מוצגת
+        noteRenewalAgra(privateAgra(records[0].kvuzat_agra_cd, records[0].shnat_yitzur));
       }))
       .catch(ignore)
       .finally(guard(settleDetailFetch));
@@ -2035,6 +2043,66 @@ function renewalSteps() {
     el("li", null, "טסט במכון רישוי, עם אישור התשלום ותעודת הביטוח"),
   );
   return list;
+}
+
+/* ---------- אגרת רישוי שנתית ----------
+   חישוב מקומי לפי תעריף אגרות הרכב הרשמי של משרד התחבורה (מתעדכן כל
+   אפריל לפי המדד). רכב פרטי/מסחרי קל: קבוצת אגרה (1-7, מטבלת הדגמים)
+   × מדרגת שנת ייצור; אופנוע: לפי נפח מנוע; משאית: לפי משקל וסוג דלק.
+   הסכום משוער ולפני הנחות — הסכום המחייב בשירות התשלומים הממשלתי */
+
+const AGRA_TARIFF_LABEL = "תעריף 04/2026";
+
+// שורות: קבוצות 1-7; עמודות: מדרגות שנת ייצור [2024+, 2021-2023, 2017-2020, עד 2016]
+const AGRA_PRIVATE = {
+  1: [1266, 1109, 972, 849],
+  2: [1610, 1404, 1230, 1076],
+  3: [1941, 1698, 1487, 1297],
+  4: [2315, 1968, 1674, 1422],
+  5: [2651, 2184, 1802, 1490],
+  6: [3764, 2823, 2117, 1585],
+  7: [5364, 3753, 2627, 1840],
+};
+
+function privateAgra(group, year) {
+  const tiers = AGRA_PRIVATE[Number(group)];
+  const y = Number(year);
+  if (!tiers || !Number.isFinite(y) || y < 1900) return null;
+  return tiers[y >= 2024 ? 0 : y >= 2021 ? 1 : y >= 2017 ? 2 : 3];
+}
+
+function motorcycleAgra(record) {
+  if (String(record.sug_delek_nm || "").includes("חשמל")) return 52;
+  const cc = Number(record.nefach_manoa);
+  if (!Number.isFinite(cc) || cc <= 0) return null;
+  if (cc <= 50) return 52;
+  if (cc <= 150) return 194;
+  return 357;
+}
+
+// רכב מהמאגר הכבד (מעל 3.5 טון בהגדרה): בנזין — אגרה אחידה; דיזל — לפי משקל
+function heavyTruckAgra(record) {
+  const fuel = String(record.sug_delek_nm || "");
+  if (fuel.includes("בנזין")) return 452;
+  const weight = Number(record.mishkal_kolel);
+  if (!fuel.includes("דיזל") || !Number.isFinite(weight) || weight <= 0) return null;
+  if (weight <= 16000) return 2292;
+  if (weight <= 20000) return 2877;
+  return 3964;
+}
+
+function formatAgra(amount) {
+  return amount == null ? null : `כ-${amount.toLocaleString("he-IL")} ₪ לשנה`;
+}
+
+// כשסכום האגרה מתחוור אחרי שקופסת החידוש כבר מוצגת — מוסיפים אותו אליה
+function noteRenewalAgra(amount) {
+  if (amount == null) return;
+  if (renewalBox.classList.contains("hidden") || renewalBox.querySelector(".renewal-fee")) return;
+  const note = renewalBox.querySelector(".renewal-note");
+  const line = el("p", "renewal-fee", `💳 סכום האגרה המשוער: כ-${amount.toLocaleString("he-IL")} ₪ (${AGRA_TARIFF_LABEL}, לפני הנחות)`);
+  if (note) renewalBox.insertBefore(line, note);
+  else renewalBox.appendChild(line);
 }
 
 function renderRenewalBox(record) {
