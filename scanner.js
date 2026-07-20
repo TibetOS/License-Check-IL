@@ -23,7 +23,7 @@ const TESSERACT_CACHE_PATH = "tessdata-fast-4.1.0";
 // כדי לא ליצור בטעות מסד ריק שישבור את המטמון של הספרייה
 function purgeLegacyOcrCache() {
   try {
-    if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
+    if (typeof indexedDB === "undefined" || !indexedDB || typeof indexedDB.databases !== "function") return;
     indexedDB
       .databases()
       .then((dbs) => {
