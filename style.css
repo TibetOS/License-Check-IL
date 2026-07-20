@@ -437,6 +437,13 @@ body {
   opacity: 0.75;
 }
 
+/* סכום האגרה המשוער — מצטרף לקופסת החידוש כשטבלת הדגמים נטענת */
+.renewal-fee {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 /* קיצור התשלום בפאנל "הרכב שלי" — צ'יפ-קישור */
 .mycar-renew {
   text-decoration: none;
@@ -663,6 +670,11 @@ body {
 .permit p {
   margin: 6px 0 0;
   font-size: 0.85rem;
+}
+
+.permit .permit-agra {
+  font-size: 0.78rem;
+  opacity: 0.85;
 }
 
 /* אין תו חניה — עיצוב מעומעם, נטרלי */
