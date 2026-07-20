@@ -14,6 +14,18 @@ identity. Prefer neutral framing: "the vehicle's official record", "status",
 "transparency of the registry data" — not "fraud", "red flags", "verdict",
 or "consumer protection".
 
+## Development commands
+
+- No build step and no dependencies. Serve the repo root with any static
+  server, e.g. `python3 -m http.server 8000`, and open http://localhost:8000.
+- There is no test suite. Verify changes by driving the real page in a
+  headless browser (Playwright/Chromium) against the local server —
+  the render functions in app.js are globals and can be exercised directly
+  via `page.evaluate` with mock registry records.
+- Deploys are automatic: push to `main` publishes the site; push any branch
+  to `staging` (`git push origin <branch>:staging --force`) publishes a
+  preview under `/staging/`.
+
 ## Standing conventions
 
 - No server, no build step: plain HTML/CSS/JS, queries go from the browser
