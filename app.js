@@ -1041,18 +1041,49 @@ function loadModelImageIndex() {
   return modelImageIndexPromise;
 }
 
-// בחירת תמונה לדגם לפי שנת הייצור: רשומת אינדקס היא {d: ברירת מחדל,
-// g: [[משנה, עד-שנה|null, תמונה], ...]} — הדורות ממוינים מהחדש לישן,
-// כך ששנת גבול בין דורות משויכת לדור החדש. בלי התאמת דור — ברירת המחדל
-function pickModelImage(indexEntry, year) {
+// דלי צבע מ-tzeva_rechev: מילת הבסיס המוקדמת ביותר במחרוזת קובעת
+// ("כסף תכלת מטלי" → silver). צבע לא מזוהה → null (בלי וריאנט צבע)
+const COLOR_BUCKET_WORDS = [
+  ["שחור", "black"],
+  ["שן פיל", "white"], ["שנהב", "white"], ["לבן", "white"], ["קרם", "white"],
+  ["כסוף", "silver"], ["כסף", "silver"], ["פלטינה", "silver"], ["אפור", "silver"], ["עופרת", "silver"],
+  ["בורדו", "red"], ["יין", "red"], ["אדום", "red"],
+  ["תכלת", "blue"], ["טורקיז", "blue"], ["כחול", "blue"],
+  ["זית", "green"], ["ירוק", "green"],
+  ["קפה", "brown"], ["מוקה", "brown"], ["חום", "brown"], ["בז", "brown"],
+  ["ברונזה", "brown"], ["מוזהב", "brown"], ["זהב", "brown"],
+  ["צהוב", "yellow"], ["כתום", "yellow"],
+];
+
+function vehicleColorBucket(tzeva) {
+  const text = String(tzeva || "").trim();
+  if (!text) return null;
+  let best = null;
+  for (const [word, bucket] of COLOR_BUCKET_WORDS) {
+    const at = text.indexOf(word);
+    if (at !== -1 && (best === null || at < best.at)) best = { at, bucket };
+  }
+  return best ? best.bucket : null;
+}
+
+// בחירת תמונה לדגם: רשומת אינדקס היא {d: ברירת מחדל, g: [[משנה,
+// עד-שנה|null, תמונה], ...]} — הדורות ממוינים מהחדש לישן, כך ששנת גבול
+// בין דורות משויכת לדור החדש. בלי התאמת דור — ברירת המחדל. תמונה יכולה
+// לשאת וריאנטים לפי צבע הרישום (v: {black: תמונה, ...}) — התאמת צבע
+// עדיפה, אחרת תמונת הבסיס של הדור
+function pickModelImage(indexEntry, year, tzeva) {
   if (!indexEntry) return null;
+  let image = indexEntry.d || null;
   const y = Number(year);
   if (Array.isArray(indexEntry.g) && Number.isFinite(y) && y > 1900) {
-    for (const [from, until, image] of indexEntry.g) {
-      if (y >= from && (until == null || y <= until)) return image;
+    for (const [from, until, genImage] of indexEntry.g) {
+      if (y >= from && (until == null || y <= until)) { image = genImage; break; }
     }
   }
-  return indexEntry.d || null;
+  if (!image) return null;
+  const bucket = vehicleColorBucket(tzeva);
+  if (bucket && image.v && image.v[bucket]) return image.v[bucket];
+  return image;
 }
 
 async function fetchVehicleImage(record, guard) {
@@ -1064,7 +1095,7 @@ async function fetchVehicleImage(record, guard) {
   // קודם האינדקס המקומי — התאמה מדויקת לפי יצרן+כינוי, ובחירת הדור
   // הנכון לפי שנת הייצור
   const index = await loadModelImageIndex();
-  const local = index ? pickModelImage(index[`${make}|${normKinuy}`], record.shnat_yitzur) : null;
+  const local = index ? pickModelImage(index[`${make}|${normKinuy}`], record.shnat_yitzur, record.tzeva_rechev) : null;
   if (local) {
     guard(() => showVehicleImage(`model-images/${local.f}`, local.t, local.a, local))();
     return;
@@ -2200,6 +2231,7 @@ function updateMyCarCandidate(digits, title, tokefDt, record) {
     mk: record ? makerEnglish(record.tozeret_nm) : null,
     kn: record ? normalizeForMatch(String(record.kinuy_mishari || "").trim()) || null : null,
     y: record && record.shnat_yitzur != null ? Number(record.shnat_yitzur) : null,
+    tz: (record && record.tzeva_rechev) || null,
   };
   const saved = loadMyCar();
   if (saved && saved.p === digits) {
@@ -2289,7 +2321,7 @@ function renderMyCarPanel() {
   thumb.decoding = "async";
   row.appendChild(thumb);
   loadModelImageIndex().then((index) => {
-    const entry = index && car.kn ? pickModelImage(index[`${car.mk}|${car.kn}`], car.y) : null;
+    const entry = index && car.kn ? pickModelImage(index[`${car.mk}|${car.kn}`], car.y, car.tz) : null;
     const src = entry ? `model-images/${entry.f}` : brandLogoPath(car.mk);
     if (!src) return;
     if (entry) thumb.title = `צילום: ${entry.c} · ${entry.l}`;
