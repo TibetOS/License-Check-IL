@@ -319,6 +319,11 @@ function hideResult() {
   const vehicleImg = vehicleImageBox.querySelector("img");
   vehicleImg.onload = null;
   vehicleImg.removeAttribute("src");
+  // גם alt וקישור הערך מנוקים — שלא יבצבצו מתחת לצללית של החיפוש הבא
+  vehicleImg.alt = "";
+  vehicleImageBox.querySelector("a").removeAttribute("href");
+  vehicleImageBox.querySelector(".vehicle-sil")?.remove();
+  silhouetteState = null;
   vehicleImageBox.classList.add("hidden");
   for (const box of [renewalBox, timelineBox, historyBox, indicatorBox, safetyBox, permitBox, recallBox]) {
     box.classList.add("hidden");
@@ -647,7 +652,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר האופנועים והקטנועים",
     },
     rows: motorcycleRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, silhouette: "moto" },
   },
   {
     resourceId: RESOURCES.personalImport,
@@ -667,7 +672,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב הציבוריים (אוטובוסים ומוניות)",
     },
     rows: publicTransportRows,
-    enrich: { wltp: true, priceList: true, recalls: true, busFleet: true },
+    enrich: { wltp: true, priceList: true, recalls: true, busFleet: true, silhouette: "van" },
   },
   {
     resourceId: RESOURCES.heavyTrucks,
@@ -677,7 +682,7 @@ const FALLBACK_CHAIN = [
       subtitle: "הרכב מופיע במאגר כלי הרכב שמעל 3.5 טון (משאיות ורכבי אספנות ותיקים)",
     },
     rows: heavyTruckRows,
-    enrich: { recalls: true },
+    enrich: { recalls: true, silhouette: "van" },
   },
   {
     resourceId: RESOURCES.cancelledFinal,
@@ -721,7 +726,8 @@ const FALLBACK_CHAIN = [
       subtitle: 'הרכב מופיע במאגר כלי הצמ"ה (ציוד מכני הנדסי — מלגזות, מנופים, טרקטורים)',
     },
     rows: constructionEquipmentRows,
-    enrich: { plateKeyed: false, constructionPollution: true },
+    // צמ"ה — אין צללית מתאימה (מנוף/מלגזה/טרקטור), עדיף בלי
+    enrich: { plateKeyed: false, constructionPollution: true, silhouette: "none" },
   },
 ];
 
@@ -813,6 +819,142 @@ function renderBrandLogo(record) {
   // הלוגו דקורטיבי (שם היצרן ממילא כתוב בכותרת), ולכן alt ריק
   brandLogo.onload = () => brandLogo.classList.remove("hidden");
   brandLogo.src = path;
+}
+
+/* ---------- צללית רכב בצבע הרשום ----------
+   כשאין תמונת דגם (לא במאגר המקומי וגם לא בוויקיפדיה) מוצג איור צללית
+   של סוג המרכב, צבוע בצבע הרשום במשרד התחבורה (tzeva_rechev). זו עובדה
+   מהרישום ולא תמונה — מסומן "איור כללי בלבד". צבע שאינו במילון מוצג
+   באפור ניטרלי; סוג המרכב מגיע מטבלת הדגמים (merkav) כשהיא נטענת,
+   ועד אז מוצגת צללית רכב כללית */
+
+// צבעי הרישום → hex. ההתאמה לפי מילת הבסיס המוקדמת ביותר במחרוזת
+// ("כסף תכלת מטלי" → כסף); "בהיר"/"כהה" מזיזים את הגוון
+const VEHICLE_COLOR_BASE = [
+  ["שן פיל", "#f2efe6"], ["שנהב", "#f2efe6"], ["לבן", "#f4f3ee"], ["קרם", "#ece2cd"],
+  ["שחור", "#23262a"], ["כסוף", "#c3c7cc"], ["כסף", "#c3c7cc"], ["פלטינה", "#b9bdc2"],
+  ["אפור", "#8b9097"], ["עופרת", "#6d7278"], ["תכלת", "#79aede"], ["טורקיז", "#2fa4a4"],
+  ["כחול", "#2d5da8"], ["בורדו", "#6f2233"], ["יין", "#6f2233"], ["אדום", "#b3372b"],
+  ["ירוק", "#2e7d46"], ["זית", "#6b7042"], ["צהוב", "#e3c62f"], ["כתום", "#dd7a2a"],
+  ["קפה", "#6b4a32"], ["מוקה", "#6b4a32"], ["חום", "#6b4a32"], ["בז", "#cbb693"],
+  ["ברונזה", "#8c6d4f"], ["מוזהב", "#b99a45"], ["זהב", "#b99a45"], ["סגול", "#6a4b8a"],
+  ["ורוד", "#d98aa8"],
+];
+
+// הזזת גוון: amount חיובי = בהיר יותר, שלילי = כהה יותר
+function shadeHex(hex, amount) {
+  const num = parseInt(hex.slice(1), 16);
+  const channel = (c) => Math.round(amount >= 0 ? c + (255 - c) * amount : c * (1 + amount));
+  const r = channel(num >> 16), g = channel((num >> 8) & 255), b = channel(num & 255);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+function vehicleColorHex(tzeva) {
+  const text = String(tzeva || "").trim();
+  if (!text) return null;
+  let best = null;
+  for (const [word, hex] of VEHICLE_COLOR_BASE) {
+    const at = text.indexOf(word);
+    if (at !== -1 && (best === null || at < best.at)) best = { at, hex };
+  }
+  if (!best) return null;
+  let hex = best.hex;
+  if (text.includes("בהיר")) hex = shadeHex(hex, 0.25);
+  else if (text.includes("כהה")) hex = shadeHex(hex, -0.3);
+  return hex;
+}
+
+// צלליות מרכב (מבט צד, חזית שמאלה). הגלגלים מצוירים בנפרד
+const SIL_BODIES = {
+  sedan: { d: "M14 52 C14 44 20 40 32 38 L52 26 C58 21 66 19 84 19 L118 19 C136 19 146 24 154 32 L176 36 C188 38 192 43 192 50 L192 56 C192 59 189 60 186 60 L172 60 A16 16 0 0 0 142 60 L70 60 A16 16 0 0 0 40 60 L20 60 C16 60 14 57 14 52 Z", wheels: [[55, 58], [157, 58]], r: 11 },
+  hatchback: { d: "M14 52 C14 44 20 40 30 38 L48 26 C54 21 62 19 80 19 L120 19 C138 19 150 26 158 38 L176 42 C186 44 190 47 190 51 L190 56 C190 59 187 60 184 60 L170 60 A16 16 0 0 0 140 60 L70 60 A16 16 0 0 0 40 60 L20 60 C16 60 14 57 14 52 Z", wheels: [[55, 58], [155, 58]], r: 11 },
+  suv: { d: "M12 50 C12 42 18 38 28 36 L44 20 C50 14 58 12 76 12 L124 12 C142 12 152 17 160 28 L178 32 C188 34 192 39 192 46 L192 54 C192 57 189 58 186 58 L172 58 A17 17 0 0 0 140 58 L72 58 A17 17 0 0 0 40 58 L18 58 C14 58 12 55 12 50 Z", wheels: [[56, 56], [156, 56]], r: 12 },
+  wagon: { d: "M14 52 C14 44 20 40 30 38 L48 26 C54 21 62 19 78 19 L138 19 C154 19 162 24 168 33 L180 37 C188 39 191 44 191 50 L191 56 C191 59 188 60 185 60 L171 60 A16 16 0 0 0 141 60 L70 60 A16 16 0 0 0 40 60 L20 60 C16 60 14 57 14 52 Z", wheels: [[55, 58], [156, 58]], r: 11 },
+  van: { d: "M16 52 C16 42 20 34 28 26 C34 19 42 15 56 15 L146 15 C168 15 182 22 188 35 L191 44 L191 55 C191 58 188 59 185 59 L172 59 A16 16 0 0 0 142 59 L72 59 A16 16 0 0 0 42 59 L22 59 C18 59 16 56 16 52 Z", wheels: [[57, 57], [157, 57]], r: 11 },
+  pickup: { d: "M12 51 C12 45 15 42 22 41 L38 25 C44 19 52 17 68 17 L98 17 C106 17 110 20 112 26 L116 34 L186 34 C190 34 192 36 192 40 L192 52 C192 56 189 58 185 58 L172 58 A16 16 0 0 0 142 58 L70 58 A16 16 0 0 0 40 58 L18 58 C14 58 12 55 12 51 Z", wheels: [[55, 56], [157, 56]], r: 12 },
+};
+
+const MERKAV_BODY = {
+  "סדאן": "sedan", "קופה": "sedan", "קבריולט": "sedan",
+  "הצ'בק": "hatchback",
+  "פנאי-שטח": "suv", "שדה": "suv",
+  "סטיישן": "wagon", "קומבי": "wagon",
+  "MPV": "van", "ואן/נוסעים": "van", "סגור/משלוח": "van", "משא אחוד": "van",
+  "תא כפול": "pickup", "תא בודד": "pickup",
+};
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function silhouetteSvg(body, hex) {
+  const fill = hex || "#b6bcc4";
+  const stroke = "#3a3f46";
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 204 76");
+  const wheel = ([x, y], r) => {
+    const tire = document.createElementNS(SVG_NS, "circle");
+    tire.setAttribute("cx", x); tire.setAttribute("cy", y); tire.setAttribute("r", r);
+    tire.setAttribute("fill", "#2b2e33");
+    const hub = document.createElementNS(SVG_NS, "circle");
+    hub.setAttribute("cx", x); hub.setAttribute("cy", y); hub.setAttribute("r", r * 0.45);
+    hub.setAttribute("fill", "#9aa0a8");
+    return [tire, hub];
+  };
+  if (body === "moto") {
+    // קטנוע: גלגלים מאחורי קווי השלד העבים
+    for (const el2 of [...wheel([44, 54], 15), ...wheel([158, 54], 15)]) svg.appendChild(el2);
+    const frame = document.createElementNS(SVG_NS, "g");
+    frame.setAttribute("stroke", fill); frame.setAttribute("stroke-width", "9");
+    frame.setAttribute("stroke-linecap", "round"); frame.setAttribute("fill", "none");
+    for (const d of ["M52 16 L44 40", "M46 40 C50 54 62 58 78 58 L108 58", "M108 58 C126 58 138 50 144 38"]) {
+      const p = document.createElementNS(SVG_NS, "path");
+      p.setAttribute("d", d); frame.appendChild(p);
+    }
+    svg.appendChild(frame);
+    for (const d of ["M126 30 C126 24 132 20 142 20 L158 20 C162 20 164 23 163 27 L160 36 C159 40 156 42 152 42 L132 42 Z", "M40 14 L64 12 L64 20 L46 21 Z"]) {
+      const p = document.createElementNS(SVG_NS, "path");
+      p.setAttribute("d", d); p.setAttribute("fill", fill); svg.appendChild(p);
+    }
+    return svg;
+  }
+  const spec = SIL_BODIES[body] || SIL_BODIES.hatchback;
+  const p = document.createElementNS(SVG_NS, "path");
+  p.setAttribute("d", spec.d); p.setAttribute("fill", fill);
+  p.setAttribute("stroke", stroke); p.setAttribute("stroke-width", "2.5");
+  p.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(p);
+  for (const w of spec.wheels) for (const el2 of wheel(w, spec.r)) svg.appendChild(el2);
+  return svg;
+}
+
+// מצב הצללית של החיפוש הנוכחי — מאפשר שדרוג מרכב כשטבלת הדגמים נטענת
+let silhouetteState = null;
+
+function renderVehicleSilhouette(record, hint, merkav) {
+  if (hint === "none") return;
+  // תמונה אמיתית שכבר מוצגת או בטעינה מנצחת צללית
+  const img = vehicleImageBox.querySelector("img");
+  if (img.getAttribute("src")) return;
+  const body = hint || MERKAV_BODY[String(merkav || "").trim()] || "hatchback";
+  const hex = vehicleColorHex(record.tzeva_rechev);
+  silhouetteState = { record, hint };
+  let wrap = vehicleImageBox.querySelector(".vehicle-sil");
+  if (!wrap) {
+    wrap = el("div", "vehicle-sil");
+    vehicleImageBox.prepend(wrap);
+  }
+  wrap.replaceChildren(silhouetteSvg(body, hex));
+  const caption = vehicleImageBox.querySelector("figcaption");
+  caption.textContent = hex
+    ? `איור כללי בלבד — לא הרכב עצמו · הצבע לפי הרישום: ${String(record.tzeva_rechev).trim()}`
+    : "איור כללי בלבד — לא הרכב עצמו";
+  vehicleImageBox.classList.remove("hidden");
+}
+
+// טבלת הדגמים נטענה אחרי שהצללית כבר מוצגת — מציירים מחדש עם המרכב הנכון
+function upgradeSilhouetteBody(merkav) {
+  if (!silhouetteState || !MERKAV_BODY[String(merkav || "").trim()]) return;
+  if (!vehicleImageBox.querySelector(".vehicle-sil")) return;
+  renderVehicleSilhouette(silhouetteState.record, silhouetteState.hint, merkav);
 }
 
 /* ---------- זיהוי יצרן לפי מספר השלדה (VIN) ----------
@@ -1001,6 +1143,9 @@ function showVehicleImage(src, title, articleUrl, credit) {
   const img = vehicleImageBox.querySelector("img");
   const link = vehicleImageBox.querySelector("a");
   const caption = vehicleImageBox.querySelector("figcaption");
+  // תמונה אמיתית מחליפה צללית אם הוצגה
+  vehicleImageBox.querySelector(".vehicle-sil")?.remove();
+  silhouetteState = null;
   // התמונה נחשפת רק אחרי שנטענה בפועל — בלי מסגרת ריקה או אייקון שבור
   img.onload = () => vehicleImageBox.classList.remove("hidden");
   img.alt = `תמונה להמחשה: ${title}`;
@@ -1052,11 +1197,18 @@ function pickModelImage(indexEntry, year) {
   return indexEntry.d || null;
 }
 
-async function fetchVehicleImage(record, guard) {
+// כל מסלולי "אין תמונה" מתנקזים לצללית הצבועה — תמונה אמיתית מנצחת
+async function fetchVehicleImage(record, guard, silhouetteHint) {
+  const shown = await tryVehicleImage(record, guard);
+  if (!shown) guard(() => renderVehicleSilhouette(record, silhouetteHint))();
+}
+
+// מחזירה true כשנקבעה תמונה (מקומית או מוויקיפדיה)
+async function tryVehicleImage(record, guard) {
   const kinuy = String(record.kinuy_mishari || "").trim();
   const make = makerEnglish(record.tozeret_nm);
   const normKinuy = normalizeForMatch(kinuy);
-  if (!normKinuy) return;
+  if (!normKinuy) return false;
 
   // קודם האינדקס המקומי — התאמה מדויקת לפי יצרן+כינוי, ובחירת הדור
   // הנכון לפי שנת הייצור
@@ -1064,11 +1216,11 @@ async function fetchVehicleImage(record, guard) {
   const local = index ? pickModelImage(index[`${make}|${normKinuy}`], record.shnat_yitzur) : null;
   if (local) {
     guard(() => showVehicleImage(`model-images/${local.f}`, local.t, local.a, local))();
-    return;
+    return true;
   }
 
   // בלי יצרן מזוהה — שאילתה רק כשהכינוי ייחודי דיו (לא "3" וכד')
-  if (!make && normKinuy.length < 4) return;
+  if (!make && normKinuy.length < 4) return false;
 
   const params = new URLSearchParams({
     action: "query",
@@ -1086,18 +1238,20 @@ async function fetchVehicleImage(record, guard) {
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(`${WIKI_API}?${params}`, { signal: controller.signal });
-    if (!response.ok) return;
+    if (!response.ok) return false;
     const data = await response.json();
     const page = Object.values(data?.query?.pages || {})[0];
-    if (!page?.thumbnail?.source) return;
+    if (!page?.thumbnail?.source) return false;
     // שומר בטיחות: כותרת הערך חייבת להכיל את שם הדגם (ואת היצרן, כשידוע) —
     // אחרת התוצאה היא כנראה ערך היצרן או ערך לא קשור, ועדיף בלי תמונה
     const normTitle = normalizeForMatch(page.title);
-    if (!normTitle.includes(normKinuy)) return;
-    if (make && !normTitle.includes(normalizeForMatch(make))) return;
+    if (!normTitle.includes(normKinuy)) return false;
+    if (make && !normTitle.includes(normalizeForMatch(make))) return false;
     guard(() => showVehicleImage(page.thumbnail.source, page.title, page.fullurl))();
+    return true;
   } catch {
     // אין רשת / חריגה מהזמן — פשוט בלי תמונה
+    return false;
   } finally {
     clearTimeout(timer);
   }
@@ -1740,7 +1894,7 @@ function startEnrichments(record, plateNumber, options, token) {
 
   renderStory(record);
   renderBrandLogo(record);
-  fetchVehicleImage(record, guard);
+  fetchVehicleImage(record, guard, options.silhouette);
   // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
   // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה
   renderVinCheck(record);
@@ -1794,6 +1948,8 @@ function startEnrichments(record, plateNumber, options, token) {
         if (!records[0]) return;
         fillPlaceholderRows("wltp", WLTP_ROWS, records[0]);
         renderSafetyEquipment(records[0]);
+        // צללית שכבר מוצגת משתדרגת למרכב הנכון מטבלת הדגמים
+        upgradeSilhouetteBody(records[0].merkav);
       }))
       .catch(ignore)
       .finally(guard(settleDetailFetch));

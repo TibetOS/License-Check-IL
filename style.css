@@ -920,6 +920,17 @@ body {
   text-align: center;
 }
 
+/* צללית רכב בצבע הרשום — כשאין תמונת דגם */
+.vehicle-sil {
+  display: flex;
+  justify-content: center;
+}
+
+.vehicle-sil svg {
+  width: 190px;
+  height: auto;
+}
+
 .vehicle-image.hidden {
   display: none;
 }
