@@ -879,8 +879,11 @@ async function handlePhotoFile(file) {
     let candidates = [...readCounts.keys()]
       .sort((a, b) => readCounts.get(b) - readCounts.get(a))
       .slice(0, 4);
-    // הסכמה בין שתי הקריאות של אזור — מקבלים אותה ומתעלמים מקריאות יחיד
-    if (candidates.length && readCounts.get(candidates[0]) >= 2) candidates = candidates.slice(0, 1);
+    // קריאות מסכימות (שני שיעורי השוליים של אותו אזור) גוברות על קריאות
+    // יחיד — אך לא זו על זו: שתי לוחיות מאומתות בתמונה אחת נשארות שתי
+    // מועמדות והבחירה בידי המשתמש, במקום קבלה שקטה של הגדולה שבהן
+    const confirmed = candidates.filter((value) => readCounts.get(value) >= 2);
+    if (confirmed.length) candidates = confirmed;
 
     // נפילה לאחור בלי אזור צהוב שמיש: פילוח עמוד אוטומטי (PSM 3) על
     // התמונה כולה. מצבי הטקסט-הפזור (11/12) מחזירים ריק בשילוב עם רשימת
@@ -985,6 +988,11 @@ async function scanLoop(worker, session) {
           return;
         }
         setScanReading(value, "candidate");
+        setScannerStatus(SCANNER_MESSAGES.confirming);
+      } else if (votes.length) {
+        // פריים לא-קריא באמצע אימות: המועמד חי בהיסטוריה עד שתתיישן,
+        // ולכן נשאר מוצג — בלי להבהב את הרצועה ולהחזיר את ההנחיה לאחור
+        setScanReading(votes[votes.length - 1], "candidate");
         setScannerStatus(SCANNER_MESSAGES.confirming);
       } else {
         const partial =
