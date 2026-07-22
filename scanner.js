@@ -50,10 +50,10 @@ const SCANNER_MESSAGES = {
   ocrLoadFailed: "טעינת רכיב הזיהוי נכשלה — בדקו את החיבור לאינטרנט או הקלידו את המספר ידנית",
   requesting: "מבקש גישה למצלמה…",
   loadingOcr: "טוען רכיב זיהוי…",
-  scanning: "כוונו את הלוחית למסגרת",
+  scanning: "כוונו את המצלמה אל הלוחית",
   confirming: "מזהה… החזיקו יציב לאימות",
   locked: "זוהה ✓",
-  help: "לא נקרא? התקרבו או הגדילו זום כך שהלוחית תמלא את המסגרת, והימנעו מסנוור",
+  help: "לא נקרא? התקרבו ללוחית, יַשְּׁרו את הזווית והימנעו מסנוור — או השתמשו בהעלאת תמונה",
   photoScanning: "מחפש מספר בתמונה…",
   photoNone: "לא זוהה מספר בתמונה — נסו תמונה קרובה או חדה יותר",
   photoPick: "נמצאו כמה מספרים — בחרו את המספר הנכון",
@@ -100,6 +100,24 @@ const PHOTO_GRID_COLS = 160;
 const PHOTO_MIN_CELLS = 6;
 const PHOTO_REGIONS_MAX = 3;
 
+// איתור הלוחית בפריים החי — במקום חיתוך מסגרת קבועה. אותו איתור-צבע של
+// מסלול התמונה רץ על הפריים כולו, כך שהלוחית נקראת היכן שהיא בתמונה ולא
+// רק כשהיא ממורכזת במסגרת. גריד עדין יותר (הלוחית קטנה יותר יחסית לפריים)
+// ובחירת האזור בעל צורת-הלוחית הטובה ביותר — לא הגדול ביותר, כדי לא לבלוע
+// גוף רכב צהבהב. העלות זולה: הקטנה אחת + קריאת פיקסלים של גריד זעיר
+const LIVE_DETECT_WIDTH = 640;
+const LIVE_GRID_COLS = 200;
+const LIVE_MIN_CELLS = 5;
+const LIVE_REGIONS_MAX = 5;
+const PLATE_MIN_ASPECT = 1.8;
+
+// שער-הטיה: לוחית מוטה בבירור נקראת לעיתים כמספר באורך תקין אך שגוי
+// (ספרת-רפאים מהקצה המוטה). מוטב לא לנעול קריאה כזו אלא להנחות ליישור.
+// הזווית מוערכת גאומטרית מפיזור הצהוב (בלי OCR); ההערכה נוטה להמעיט, ולכן
+// סף נמוך יחסית — הטיה מוערכת מעל ~4° (≈8° בפועל) חוסמת נעילה. פרספקטיבה
+// קלה (רוב הצילומים מהיד) נשארת מתחת לסף ונקראת רגיל
+const SKEW_LOCK_MAX = 4;
+
 // קצב הלולאה: זמן הזיהוי עצמו מנוכה מההפוגה, וכשמועמד ממתין לאימות
 // הפריים הבא נדגם כמעט מיד — ההמתנה הקבועה הקודמת האטה כל נעילה
 const SCAN_IDLE_MS = 150;
@@ -142,6 +160,8 @@ let ocrLoadProgress = null;
 // על קנבס זעיר נפרד, שקריאתו זולה
 let ocrCanvas = null;
 let plateSampleCanvas = null;
+// קנבס-האיתור של הפריים החי (מוקטן), משוחזר בין פריימים כמו קנבס ה-OCR
+let frameCanvas = null;
 
 // מזהה סשן רץ — סוגר לולאות זיהוי ישנות כשהשכבה נסגרת ונפתחת מחדש
 let scanSession = 0;
@@ -543,29 +563,99 @@ async function openScanner() {
 
 /* ---------- לולאת הזיהוי ---------- */
 
-// חיתוך אזור מסגרת הכיוון מתוך פריים הווידאו. הווידאו מוצג ב-object-fit:
-// cover, ולכן ממפים את מלבן המסגרת (בקואורדינטות מסך) חזרה לקואורדינטות
-// הפריים המקורי דרך יחס הכיסוי וההיסט
-function grabGuideRegion() {
+// דירוג אזור מועמד לפי צורת-לוחית: יחס רוחב/גובה בטווח הלוחית מקבל ניקוד
+// מלא, ואזור שממלא כמעט את כל הפריים (גוף רכב) או זעיר מדי מקבל ניקוד נמוך.
+// כך נבחר האזור הדמוי-לוחית ולא בהכרח הגדול ביותר
+function scorePlateRegion(region, canvas) {
+  const aspect = region.w / region.h;
+  const aspectScore = aspect >= 2.5 && aspect <= 6 ? 1 : aspect >= PLATE_MIN_ASPECT ? 0.6 : 0.15;
+  const areaFrac = (region.w * region.h) / (canvas.width * canvas.height);
+  const sizeScore = areaFrac > 0.5 ? 0.2 : areaFrac < 0.002 ? 0.3 : 1;
+  return aspectScore * sizeScore;
+}
+
+// איתור הלוחית בכל מקום בפריים החי: הפריים מוקטן לקנבס-איתור, אזורים
+// צהובים מאותרים כמו במסלול התמונה, נבחר האזור בעל צורת-הלוחית הטובה
+// ביותר, וקואורדינטותיו ממופות חזרה לווידאו המלא לחיתוך רצועת ה-OCR.
+// אין דרישת יישור: הלוחית נקראת גם כשאינה ממורכזת. בלי אזור צהוב — null
+function grabPlateRegion() {
   const vw = scannerVideo.videoWidth;
   const vh = scannerVideo.videoHeight;
   if (!vw || !vh) return null;
 
-  const videoRect = scannerVideo.getBoundingClientRect();
-  const guideRect = scannerGuide.getBoundingClientRect();
-  if (!videoRect.width || !videoRect.height || !guideRect.width) return null;
+  if (!frameCanvas) frameCanvas = document.createElement("canvas");
+  const dw = Math.min(LIVE_DETECT_WIDTH, vw);
+  frameCanvas.width = dw;
+  frameCanvas.height = Math.max(1, Math.round((dw * vh) / vw));
+  const fctx = frameCanvas.getContext("2d");
+  fctx.drawImage(scannerVideo, 0, 0, frameCanvas.width, frameCanvas.height);
 
-  const scale = Math.max(videoRect.width / vw, videoRect.height / vh);
-  const offsetX = (videoRect.width - vw * scale) / 2;
-  const offsetY = (videoRect.height - vh * scale) / 2;
+  const regions = findPlateRegions(frameCanvas, {
+    gridCols: LIVE_GRID_COLS,
+    minCells: LIVE_MIN_CELLS,
+    maxRegions: LIVE_REGIONS_MAX,
+  });
+  let best = null;
+  let bestScore = 0;
+  for (const region of regions) {
+    if (region.w / region.h < PLATE_MIN_ASPECT) continue;
+    const score = scorePlateRegion(region, frameCanvas);
+    if (score > bestScore) {
+      bestScore = score;
+      best = region;
+    }
+  }
+  if (!best) return null;
 
-  const sx = (guideRect.left - videoRect.left - offsetX) / scale;
-  const sy = (guideRect.top - videoRect.top - offsetY) / scale;
-  const sw = guideRect.width / scale;
-  const sh = guideRect.height / scale;
+  // מיפוי לקואורדינטות הווידאו המלא + ריפוד קטן (אנכי רחב יותר, לרווח מעל
+  // ומתחת לספרות), וחיתוך ברזולוציה המלאה לפרטים מרביים
+  const sxScale = vw / frameCanvas.width;
+  const syScale = vh / frameCanvas.height;
+  const padX = best.w * sxScale * 0.06;
+  const padY = best.h * syScale * 0.18;
+  const sx = Math.max(0, best.x * sxScale - padX);
+  const sy = Math.max(0, best.y * syScale - padY);
+  const sw = Math.min(vw - sx, best.w * sxScale + 2 * padX);
+  const sh = Math.min(vh - sy, best.h * syScale + 2 * padY);
   if (sw <= 0 || sh <= 0) return null;
 
   return ocrStripFromSource(scannerVideo, sx, sy, sw, sh);
+}
+
+// הערכת הטיית הלוחית ללא OCR: מרכז-המסה האנכי של הפיקסלים הצהובים בכל
+// עמודה יושב על ציר הלוחית, ושיפוע הרגרסיה שלו הוא טנגנס זווית ההטיה
+function estimatePlateSkew(canvas) {
+  const w = 120;
+  const h = Math.max(8, Math.round((w * canvas.height) / canvas.width));
+  const sample = document.createElement("canvas");
+  sample.width = w;
+  sample.height = h;
+  const ctx = sample.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(canvas, 0, 0, w, h);
+  const px = ctx.getImageData(0, 0, w, h).data;
+  const cols = [];
+  for (let x = 0; x < w; x++) {
+    let sum = 0;
+    let count = 0;
+    for (let y = 0; y < h; y++) {
+      const i = (y * w + x) * 4;
+      if ((px[i] + px[i + 1]) / 2 - px[i + 2] > PLATE_YELLOW_MIN) {
+        sum += y;
+        count++;
+      }
+    }
+    if (count > 0) cols.push([x, sum / count]);
+  }
+  if (cols.length < 10) return null;
+  const n = cols.length;
+  const sx = cols.reduce((a, p) => a + p[0], 0);
+  const sy = cols.reduce((a, p) => a + p[1], 0);
+  const sxx = cols.reduce((a, p) => a + p[0] * p[0], 0);
+  const sxy = cols.reduce((a, p) => a + p[0] * p[1], 0);
+  const denom = n * sxx - sx * sx;
+  if (Math.abs(denom) < 1e-6) return null;
+  const slope = (n * sxy - sx * sy) / denom;
+  return (Math.atan(slope) * 180) / Math.PI;
 }
 
 // הכנת רצועת OCR מתוך מקור (פריים וידאו או קנבס תמונה): חיתוך, מיזעור
@@ -716,12 +806,13 @@ function loadPhoto(file) {
   });
 }
 
-// איתור אזורים בגודל-לוחית בתמונה: תאי הרשת מסווגים לפי צהיבות, רצפי
-// שורות עם די תאים צהובים נעשים אזורים, ומכל אזור נגזר מלבן עם שוליים.
-// מוחזרים הגדולים תחילה, מסוננים לצורת-לוחית (רחב מגבוה)
-function findPlateRegions(canvas) {
+// איתור אזורים בגודל-לוחית: תאי הרשת מסווגים לפי צהיבות, רצפי שורות עם די
+// תאים צהובים נעשים אזורים, ומכל אזור נגזר מלבן עם שוליים. מוחזרים הגדולים
+// תחילה, מסוננים לצורת-לוחית (רחב מגבוה). משותף למסלול התמונה (ברירות מחדל)
+// ולסריקה החיה (גריד עדין יותר, יותר מועמדים) — אותו איתור, מקור אחד
+function findPlateRegions(canvas, { gridCols = PHOTO_GRID_COLS, minCells = PHOTO_MIN_CELLS, maxRegions = PHOTO_REGIONS_MAX } = {}) {
   const grid = document.createElement("canvas");
-  const gw = PHOTO_GRID_COLS;
+  const gw = gridCols;
   const gh = Math.max(8, Math.round((gw * canvas.height) / canvas.width));
   grid.width = gw;
   grid.height = gh;
@@ -740,7 +831,7 @@ function findPlateRegions(canvas) {
     if (y < gh) {
       let count = 0;
       for (let x = 0; x < gw; x++) if (isYellow(x, y)) count++;
-      hit = count >= PHOTO_MIN_CELLS;
+      hit = count >= minCells;
     }
     if (hit && rowStart === null) rowStart = y;
     if (!hit && rowStart !== null) {
@@ -764,7 +855,7 @@ function findPlateRegions(canvas) {
           colStart = null;
         }
       }
-      if (best && best[1] - best[0] >= PHOTO_MIN_CELLS) {
+      if (best && best[1] - best[0] >= minCells) {
         found.push({ x0: best[0], x1: best[1], y0, y1 });
       }
     }
@@ -773,7 +864,7 @@ function findPlateRegions(canvas) {
   found.sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0));
   const scaleX = canvas.width / gw;
   const scaleY = canvas.height / gh;
-  return found.slice(0, PHOTO_REGIONS_MAX).map((region) => ({
+  return found.slice(0, maxRegions).map((region) => ({
     x: region.x0 * scaleX,
     y: region.y0 * scaleY,
     w: (region.x1 - region.x0) * scaleX,
@@ -928,15 +1019,45 @@ async function handlePhotoFile(file) {
   }
 }
 
+// לוחיות ישראליות מודרניות הן 7-8 ספרות — תוצאה קצרה לעולם לא מתקבלת
+// אוטומטית (גם אם המאגר תומך במספרים היסטוריים קצרים בהקלדה ידנית)
+function isPlateLength(digits) {
+  return digits.length === 7 || digits.length === 8;
+}
+
+// זיהוי מספר מרצועת OCR. קריאה ישרה בודדת (מהירה), והאימות בין פריימים
+// (2 מתוך 3) הוא רשת הביטחון. אם הלוחית מוטה בבירור — הקריאה הישרה אינה
+// אמינה (ספרת-רפאים באורך תקין), ולכן לא מחזירים מספר לנעילה אלא null,
+// וההנחיה תבקש ליישר את הזווית. קריאה חלקית של לוחית מוטה עדיין מוצגת
+// כחיווי-חיים דרך ה-raw, אך לעולם לא נועלת
+async function recognizePlateStrip(worker, strip, session) {
+  let read = null;
+  try {
+    const blob = await canvasToJpegBlob(strip);
+    if (session !== scanSession) return null;
+    const result = await worker.recognize(blob || strip, {}, { text: true, blocks: true });
+    read = extractScanRead(result?.data);
+  } catch {
+    return null;
+  }
+  if (session !== scanSession) return null;
+
+  const isValue = read && (isPlateLength(read.digits) || isPlateLength(read.raw));
+  if (isValue && Math.abs(estimatePlateSkew(strip) || 0) >= SKEW_LOCK_MAX) {
+    // מוטה מדי לזיהוי אמין — לא מחזירים מספר לנעילה, כדי שלא תיווצר נעילה
+    // שגויה; ההנחיה תבקש ליישר את הזווית
+    return null;
+  }
+  return read;
+}
+
 // קבלת תוצאה: אותה מחרוזת בת 7-8 ספרות פעמיים מתוך הקריאות התקינות
 // האחרונות (חלון של שלוש) — פריים רועש בודד באמצע אינו מאפס את האימות.
-// לוחיות ישראליות מודרניות הן 7-8 ספרות — תוצאה קצרה לעולם לא מתקבלת
-// אוטומטית (גם אם המאגר תומך במספרים היסטוריים קצרים בהקלדה ידנית).
 // הלולאה מזינה משוב חי: קריאה חלקית מוצגת מעומעמת, מועמד מלא צובע את
 // המסגרת בכתום, ואימות מהבהב בירוק לרגע לפני הסגירה — כך שהמשתמש רואה
-// שהזיהוי חי, מתקדם ומצליח
+// שהזיהוי חי, מתקדם ומצליח. הלוחית נקראת היכן שהיא בפריים (grabPlateRegion),
+// בלי דרישת יישור למסגרת
 async function scanLoop(worker, session) {
-  const isPlateLength = (digits) => digits.length === 7 || digits.length === 8;
   let votes = [];
   let lastValidAt = 0;
   let lastReadAt = Date.now();
@@ -950,61 +1071,58 @@ async function scanLoop(worker, session) {
     }
     const startedAt = Date.now();
     if (lastValidAt && startedAt - lastValidAt > SCAN_STALE_MS) votes = [];
-    const canvas = grabGuideRegion();
-    if (canvas) {
-      let read = null;
-      try {
-        const blob = await canvasToJpegBlob(canvas);
-        if (session !== scanSession) return;
-        const result = await worker.recognize(blob || canvas, {}, { text: true, blocks: true });
-        read = extractScanRead(result?.data);
-      } catch {
-        // פריים בעייתי — פשוט ממשיכים לפריים הבא
-      }
+
+    // איתור הלוחית בכל מקום בפריים; בלי אזור צהוב אין מה לזהות — מדלגים
+    // על ה-OCR כליל, כך שפריים ריק זול ואינו מעמיס את המעבד
+    const strip = grabPlateRegion();
+    let read = null;
+    if (strip) {
+      read = await recognizePlateStrip(worker, strip, session);
       if (session !== scanSession) return;
       // עיבוד תמונה התחיל בזמן הזיהוי — לא כותבים משוב מעופש מעל שלו
       if (photoHold) continue;
-
-      const value =
-        read && isPlateLength(read.digits) ? read.digits
-        : read && isPlateLength(read.raw) ? read.raw
-        : null;
-
-      if (value) {
-        lastValidAt = Date.now();
-        lastReadAt = lastValidAt;
-        votes.push(value);
-        if (votes.length > SCAN_VOTE_WINDOW) votes.shift();
-        if (votes.filter((v) => v === value).length >= 2) {
-          setScanReading(value, "locked");
-          setScannerStatus(SCANNER_MESSAGES.locked);
-          // הבזק ירוק קצר — רגע ההצלחה נראה לפני שהשכבה נסגרת
-          await new Promise((resolve) => setTimeout(resolve, 350));
-          if (session !== scanSession) return;
-          acceptPlate(value);
-          return;
-        }
-        setScanReading(value, "candidate");
-        setScannerStatus(SCANNER_MESSAGES.confirming);
-      } else {
-        const partial =
-          read && read.digits.length >= 4 ? read.digits
-          : read && read.raw.length >= 4 ? read.raw
-          : null;
-        if (partial) {
-          // קריאה חלקית — עדיין לא לוחית, אבל מראים שהזיהוי חי
-          lastReadAt = Date.now();
-          setScanReading(partial, "partial");
-        } else {
-          setScanReading(null);
-        }
-        setScannerStatus(
-          Date.now() - lastReadAt > SCAN_HELP_AFTER_MS
-            ? SCANNER_MESSAGES.help
-            : SCANNER_MESSAGES.scanning,
-        );
-      }
     }
+
+    const value =
+      read && isPlateLength(read.digits) ? read.digits
+      : read && isPlateLength(read.raw) ? read.raw
+      : null;
+
+    if (value) {
+      lastValidAt = Date.now();
+      lastReadAt = lastValidAt;
+      votes.push(value);
+      if (votes.length > SCAN_VOTE_WINDOW) votes.shift();
+      if (votes.filter((v) => v === value).length >= 2) {
+        setScanReading(value, "locked");
+        setScannerStatus(SCANNER_MESSAGES.locked);
+        // הבזק ירוק קצר — רגע ההצלחה נראה לפני שהשכבה נסגרת
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        if (session !== scanSession) return;
+        acceptPlate(value);
+        return;
+      }
+      setScanReading(value, "candidate");
+      setScannerStatus(SCANNER_MESSAGES.confirming);
+    } else {
+      const partial =
+        read && read.digits.length >= 4 ? read.digits
+        : read && read.raw.length >= 4 ? read.raw
+        : null;
+      if (partial) {
+        // קריאה חלקית — עדיין לא לוחית, אבל מראים שהזיהוי חי
+        lastReadAt = Date.now();
+        setScanReading(partial, "partial");
+      } else {
+        setScanReading(null);
+      }
+      setScannerStatus(
+        Date.now() - lastReadAt > SCAN_HELP_AFTER_MS
+          ? SCANNER_MESSAGES.help
+          : SCANNER_MESSAGES.scanning,
+      );
+    }
+
     // הפוגה דינמית: זמן הזיהוי שחלף מנוכה ממנה, ומועמד שממתין לאימות
     // נדגם כמעט מיד — נשמר רק פסק זמן קצר שמשאיר את ה-UI נשים
     const idle = (votes.length ? SCAN_CONFIRM_IDLE_MS : SCAN_IDLE_MS) - (Date.now() - startedAt);

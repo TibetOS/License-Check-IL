@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "בדיקת רכב",
+    "slug": "license-check-il",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "licensecheckil",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "il.traffko.licensecheck",
+      "infoPlist": {
+        "NSCameraUsageDescription": "המצלמה משמשת לסריקת מספר לוחית הרישוי במכשיר עצמו. אף תמונה אינה נשלחת לשום שרת."
+      }
+    },
+    "android": {
+      "package": "il.traffko.licensecheck",
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "המצלמה משמשת לסריקת מספר לוחית הרישוי במכשיר עצמו. אף תמונה אינה נשלחת לשום שרת."
+        }
+      ]
+    ]
+  }
+}
