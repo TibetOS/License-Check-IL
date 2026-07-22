@@ -1,0 +1,27 @@
+{
+  "name": "license-check-il-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild --clean"
+  },
+  "dependencies": {
+    "@react-native-ml-kit/text-recognition": "^1.5.2",
+    "expo": "~52.0.0",
+    "expo-camera": "~16.0.0",
+    "expo-file-system": "~18.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-webview": "13.12.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@types/react": "~18.3.12",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}
