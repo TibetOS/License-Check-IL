@@ -19,18 +19,21 @@ Findings below verified live on 2026-07-22, same methodology as rounds 1–2.
 - What *does* exist: **official Israeli importers publish per-plate color-code
   lookup tools.** They take the licence plate — the exact input the app already
   has — and return the manufacturer paint code.
-- Two mechanisms seen so far: a **clean REST GET** (Mazda / Delek Motors) and a
-  **client-side JS/XHR call after submit** (Kia / Telcar). Both are keyed on the
-  plate; neither requires personal data for the plate-only widget.
-- **Architecture constraint:** the app is a static, no-backend PWA. These importer
-  endpoints are same-origin calls on the *importers'* sites and will not send CORS
-  headers to our origin, so the browser can't read them directly. Pulling the code
-  in-app therefore needs a **small server-side proxy** (`plate → code`), plus a
-  privacy note (the plate now travels to our proxy and to the importer). Shipped
-  interim: per-brand **deep links** from the colour row (PR #29), zero backend.
-- Status: the pull is **feasible** but not yet built. Blocked on capturing each
-  importer's exact request from an environment with normal browser/network access
-  (the research sandbox blocks headless Chromium and was flaky to the Delek host).
+- Two mechanisms seen so far: a **clean REST GET** (Mazda / Delek Motors, endpoint
+  identified) and a **plain form POST rendered server-side** (Kia / Telcar,
+  **confirmed live** — returns real per-vehicle codes). Both are keyed on the plate;
+  neither requires personal data for the plate-only widget.
+- **CORS is not the blocker it was assumed to be.** For Kia, a cross-origin fetch
+  from the app's real origin returns a readable body — so a proxy may be
+  unnecessary. Must be re-checked per brand.
+- **The actual blocker is rate limiting.** Kia's endpoint returned correct codes,
+  then stopped returning any result — for every plate, including a genuine
+  click-the-button submit — after ~12 requests in a few minutes. An in-app pull
+  means one request to a marketing site per user lookup: it will be throttled,
+  fails silently, and is likely contrary to the importers' terms.
+- **Recommendation:** keep the per-brand **deep links** (PR #29, zero backend, always
+  works) as the default. Any auto-pull should be best-effort only — lazy, cached
+  indefinitely per plate, silently hidden on failure, never authoritative.
 
 ## Shipped interim (PR #29) — deep links, no backend
 
@@ -77,7 +80,7 @@ GET https://forms.delek-motors.co.il/Home/GetColorCodes?brandId=1&licenseNumber=
 sandbox (`forms.delek-motors.co.il` returned 502/000 through the egress proxy).
 Capture step below should confirm the response JSON shape and its CORS headers.
 
-## Mechanism B — client-side XHR after submit (Kia / Telcar) ⚠️ endpoint not captured
+## Mechanism B — plain form POST (Kia / Telcar) ✅ confirmed live in a real browser
 
 Kia's page (`kia-israel.co.il/color-code`, WordPress) has the plate-only widget the
 user confirmed:
@@ -95,15 +98,62 @@ Established facts:
   claiming it needed a national ID was wrong: it described a *different* form on
   the same page — `gform_24`, a service-booking Gravity Form. The page hosts nine
   forms; the color-code widget is `#serviceform`.)
-- The plain server-side POST to `/color-code` does **not** render the code (two
-  different plates returned pages differing only by anti-spam tokens), and no AJAX
-  handler for `#serviceform` appears in the page's static scripts. So the code is
-  fetched by a **browser-side XHR** whose exact URL only reveals itself at runtime
-  (Telcar backend or a WordPress `admin-ajax.php` action).
-- Capturing that call needs a real browser. The research sandbox's egress proxy
-  reset every headless-Chromium navigation (`ERR_CONNECTION_RESET`; curl through
-  the same proxy worked — consistent with importer-side bot protection reacting to
-  a non-human TLS fingerprint), so it must be captured elsewhere.
+- There is **no AJAX** — the widget does a plain native form POST to the same URL,
+  and the result is rendered server-side into the returned HTML:
+
+  ```
+  POST https://kia-israel.co.il/color-code
+  Content-Type: application/x-www-form-urlencoded
+  plateNum=<plate>
+  ```
+
+  The response contains `לקוח יקר, קוד צבע רכבך הינו <CODE>`; parse with
+  `/קוד צבע רכבך הינו\s*([^\s<]+)/`.
+
+- **Verified live (2026-07-22, real browser), cross-checked against the registry
+  colour** — the codes are per-vehicle and internally consistent:
+
+  | Plate | Registry `tzeva_rechev` | Paint code |
+  |---|---|---|
+  | 3101372 | בז (beige) | `J4` |
+  | 3048872 | בז (beige) | `J4` (same colour ⇒ same code) |
+  | 8743074 | שנהב לבן (ivory white) | `UD` (= Kia Clear White) |
+
+- **CORS is permissive.** A cross-origin `fetch` from the app's real origin
+  (`https://tibetos.github.io`) to `kia-israel.co.il` returned `type: "cors"` with a
+  **readable body** — so for Kia the browser can read the response and **no proxy is
+  needed on CORS grounds**. (This overturns the round-3 assumption above that a
+  proxy is unavoidable; it must be re-checked per brand.)
+
+### ⚠️ The real blocker: the endpoint throttles automated traffic
+
+The decisive operational finding. The lookup returned correct codes on the first
+three attempts, then — after roughly a dozen requests within a few minutes — began
+returning the plain form with **no result for every plate**, including:
+
+- the cross-origin `fetch` from another origin, **and**
+- a genuine human-style submit (typing a plate and clicking "בדוק רכב") for a plate
+  that had returned a code minutes earlier.
+
+Causation isn't proven (a transient fault is conceivable), but "reliably works, then
+reliably stops after a burst" is the signature of rate-limiting / bot protection.
+Related evidence: headless Chromium could not load the site at all from the research
+sandbox, while curl could — consistent with fingerprint-based bot defences.
+
+Header spoofing does **not** bypass it: POSTs with a browser `User-Agent`, `Referer`,
+`Origin: https://kia-israel.co.il`, `Sec-Fetch-Site: same-origin` and
+`X-Requested-With` all returned the no-result page.
+
+**Design implication.** An in-app pull issues one request to a *marketing site* per
+user lookup. That will be throttled or IP-blocked, will fail silently when it is, and
+is very likely contrary to the importers' terms — these tools are published for a
+person checking their own car, not for bulk querying. Therefore:
+
+1. Keep the **deep link** (PR #29) as the default, always-working path.
+2. Treat any auto-pull as **best-effort only**: fire it lazily, cache aggressively
+   (the code never changes for a given plate — cache indefinitely, per plate), hide
+   the row silently on failure, and never present it as authoritative.
+3. Never retry in a loop, and never pre-fetch for vehicles the user didn't ask about.
 
 ## Architecture: why a proxy is (probably) required
 
