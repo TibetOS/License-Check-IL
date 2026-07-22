@@ -391,7 +391,7 @@ function attachRowInfo(dt, dd) {
 }
 
 // opts: skip — לדלג על שורה ריקה במקום להציג "—"; ltr — ערך טכני (VIN וכד');
-// badge — תג {text, tone} שמוצג ליד הערך
+// badge — תג {text, tone} שמוצג ליד הערך; link — קישור {text, href} אחרי הערך
 function appendDetailRow(label, value, opts = {}) {
   const empty = value == null || value === "";
   if (opts.skip && empty) return;
@@ -399,6 +399,13 @@ function appendDetailRow(label, value, opts = {}) {
   if (opts.ltr && !empty) dd.dir = "ltr";
   if (opts.badge && !empty) {
     dd.appendChild(el("span", `badge badge-${opts.badge.tone}`, opts.badge.text));
+  }
+  if (opts.link && !empty) {
+    const link = el("a", "row-link", opts.link.text);
+    link.href = opts.link.href;
+    link.target = "_blank";
+    link.rel = "noopener";
+    dd.appendChild(link);
   }
   const dt = el("dt", null, label);
   attachRowInfo(dt, dd);
@@ -439,7 +446,7 @@ function mainRegistryRows(record) {
     ["דגם", record.kinuy_mishari || record.degem_nm],
     ["רמת גימור", record.ramat_gimur, { skip: true }],
     ["שנת ייצור", record.shnat_yitzur],
-    ["צבע", record.tzeva_rechev],
+    ["צבע", record.tzeva_rechev, colorCodeLinkOpt(record)],
     ["סוג דלק", record.sug_delek_nm],
     ["בעלות", record.baalut],
     ["מספר שלדה", record.misgeret, { skip: true, ltr: true }],
@@ -774,6 +781,39 @@ function makerEnglish(tozeretNm) {
     }
   }
   return best ? MAKER_EN[best] : null;
+}
+
+/* ---------- קוד צבע היצרן (איתור אצל היבואן) ----------
+   קוד הצבע המקורי של היצרן (למשל "1F7" של טויוטה, "LC9X" של פולקסווגן —
+   הקוד שעל מדבקת חדר המנוע / מסגרת הדלת, לצורך התאמת צבע לתיקון) אינו קיים
+   במאגר הממשלתי: שם יש רק שם צבע ("כסף מטלי") וקוד צבע פנימי של משרד
+   התחבורה — לא קוד היצרן. הוא גם אינו מקודד במספר השלדה (VIN). היבואנים
+   הרשמיים בישראל מפרסמים כלי איתור לפי מספר הרישוי — בדיוק המספר שכבר
+   חיפשנו — ולכן מופנה אליהם ישירות. מפתח לפי השם האנגלי של היצרן
+   (makerEnglish); ערוצי יבוא משותפים חולקים קישור אחד */
+const COLOR_CODE_TOOLS = {
+  Kia: "https://kia-israel.co.il/color-code",
+  Skoda: "https://www.skoda.co.il/color-finder/",
+  Audi: "https://www.audi.co.il/color-finder/",
+  // צ'מפיון מוטורס — פולקסווגן, סיאט וקופרה חולקים טופס אחד
+  Volkswagen: "https://www.championmotors.co.il/check-color/",
+  SEAT: "https://www.championmotors.co.il/check-color/",
+  Cupra: "https://www.championmotors.co.il/check-color/",
+  Mazda: "https://www.mazda.co.il/color-code",
+  NIO: "https://www.nio.co.il/color-code",
+  Mini: "https://www.mini.co.il/he_IL/home/serv/color-codes.html",
+  BMW: "https://www.bmw.co.il/he/topics/offers-and-services/color-codes.html",
+};
+
+function colorCodeToolUrl(tozeretNm) {
+  const en = makerEnglish(tozeretNm);
+  return (en && COLOR_CODE_TOOLS[en]) || null;
+}
+
+// אופציה לשורת "צבע": קישור לאיתור קוד צבע היצרן, רק ליצרנים שיש להם כלי
+function colorCodeLinkOpt(record) {
+  const href = colorCodeToolUrl(record && record.tozeret_nm);
+  return href ? { link: { text: "איתור קוד צבע היצרן ↗", href } } : {};
 }
 
 /* ---------- לוגו היצרן ----------

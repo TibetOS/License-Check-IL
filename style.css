@@ -594,6 +594,22 @@ body {
   color: #1e40af;
 }
 
+/* קישור איתור קוד צבע היצרן, נספח לשורת "צבע" */
+.row-link {
+  display: inline-block;
+  margin-inline-start: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
 /* ההסבר נפתח בתוך תא הערך — טקסט קטן ושורת מקור */
 .row-note {
   display: block;
