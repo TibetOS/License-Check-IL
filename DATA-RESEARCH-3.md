@@ -205,6 +205,65 @@ If a brand's tool turns out to be a lead-capture form that emails the code later
 (rather than showing it on screen), it **cannot** be auto-pulled and stays a
 deep-link.
 
+## Capture results (2026-07-22, real browser + curl)
+
+Every code below was cross-checked against the registry's `tzeva_rechev`.
+
+| Brand | Plate (test) | Code | Colour name | Registry colour | Callable from the app? |
+|---|---|---|---|---|---|
+| **Mazda** | 89282803 (CX-5 2025) | `A4D` | לבן ארקטי | שנהב לבן ✓ | **Yes — JSON API, CORS `*`** |
+| **Ford** | 14805304 (Focus 2025) | `PN3GZ` | FROZEN WHITE | שנהב לבן ✓ | **Yes — same API** |
+| Volkswagen | 45145104 (Golf 2025) | `C2C2BD` | אפור אבן | אפור ✓ | No — browser-only, no CORS |
+| Kia | 3101372 / 8743074 | `J4` / `UD` | — | בז / שנהב לבן ✓ | No — bot-protected + rate-limited |
+
+### ✅ Delek Motors — a clean, CORS-open JSON API (Mazda + Ford)
+
+```
+GET https://serviceforms.delek-motors.co.il/Home/GetColorCodes?brandId=<id>&licenseNumber=<plate>
+```
+
+```json
+{"result":true,"error":null,"data":[{"id":252067,"brandId":1,
+  "licenseNumber":"89282803","chassisNumber":"KF6W7A10910726",
+  "colorCode":"A4D","colorName":"לבן ארקטי","submitDate":"2025-02-01T18:58:34.343"}]}
+```
+
+- `brandId=1` → **Mazda**, `brandId=2` → **Ford**. Wrong brand ⇒ `"data":[]`.
+  IDs 3–6 returned empty for the plates tested (unmapped or other marques).
+- Response headers: `Access-Control-Allow-Origin: *`,
+  `Access-Control-Allow-Credentials: true`, `Content-Type: application/json`.
+  **The static app can call this directly from the browser — no proxy, no backend.**
+- Also returns `chassisNumber`, so the app can verify it against the registry's
+  `misgeret` before displaying. ⚠️ It is a **partial** VIN — Ford returned
+  `PXXGCHPRG10478` where the registry holds `WF0PXXGCHPRG10478` — so compare by
+  **suffix**, never by equality.
+- Host is `serviceforms.delek-motors.co.il`. (An earlier round mis-read the
+  truncated string in the JS bundle as `forms.` — that host does not serve this and
+  returns 502, which is why the first attempt failed.)
+
+### ⚠️ Champion Motors family (VW, Škoda, Audi, SEAT, Cupra) — browser-only
+
+The VW tool takes **plate + chassis** (`cnumber`, `csheled`) — both of which the app
+already has — and renders the code server-side. It works in a real browser
+(45145104 → `C2C2BD` אפור אבן), but the same GET **and** POST issued from curl return
+the page with an **empty** result block, and the page sends **no CORS headers**.
+So it is neither reproducible outside a browser nor readable cross-origin.
+Škoda / Audi / SEAT / Cupra share the importer and the same `/color-finder/`
+pattern; they were not individually exercised but are expected to behave alike.
+
+### Not captured
+
+- **BMW / Mini** — blocked by a cookie-consent modal; accepting consent on the
+  user's behalf is out of scope for an agent, so this needs a human click first.
+- **NIO** — page markup hints at `licenseNumber`; endpoint not yet captured.
+
+### Not per-plate lookups at all (reference material, not APIs)
+
+- **Fiat** — the fiatclub.co.il link is a community **forum thread**, i.e. a guide to
+  finding the code on the car, not a lookup service.
+- **Tesla** — the service.tesla.com link is **body-repair documentation**; useful for
+  explaining where the code lives, not queryable by plate.
+
 ## Per-brand capture targets
 
 | Brand(s) | Page | What to look for |
