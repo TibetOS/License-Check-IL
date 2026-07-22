@@ -391,11 +391,13 @@ function attachRowInfo(dt, dd) {
 }
 
 // opts: skip — לדלג על שורה ריקה במקום להציג "—"; ltr — ערך טכני (VIN וכד');
-// badge — תג {text, tone} שמוצג ליד הערך; link — קישור {text, href} אחרי הערך
+// badge — תג {text, tone} שמוצג ליד הערך; link — קישור {text, href} אחרי הערך;
+// role — מסמן את השורה כדי שאפשר יהיה למלא בה ערך שמגיע מאוחר יותר
 function appendDetailRow(label, value, opts = {}) {
   const empty = value == null || value === "";
   if (opts.skip && empty) return;
   const dd = el("dd", null, empty ? "—" : String(value));
+  if (opts.role) dd.dataset.role = opts.role;
   if (opts.ltr && !empty) dd.dir = "ltr";
   if (opts.badge && !empty) {
     dd.appendChild(el("span", `badge badge-${opts.badge.tone}`, opts.badge.text));
@@ -810,10 +812,86 @@ function colorCodeToolUrl(tozeretNm) {
   return (en && COLOR_CODE_TOOLS[en]) || null;
 }
 
-// אופציה לשורת "צבע": קישור לאיתור קוד צבע היצרן, רק ליצרנים שיש להם כלי
+// אופציה לשורת "צבע": קישור לאיתור קוד צבע היצרן, רק ליצרנים שיש להם כלי.
+// role מסמן את השורה כדי שאפשר יהיה למלא בה את הקוד עצמו כשהוא חוזר
 function colorCodeLinkOpt(record) {
   const href = colorCodeToolUrl(record && record.tozeret_nm);
-  return href ? { link: { text: "איתור קוד צבע היצרן ↗", href } } : {};
+  return href ? { role: "color", link: { text: "איתור קוד צבע היצרן ↗", href } } : { role: "color" };
+}
+
+/* ---------- שליפת קוד צבע היצרן (דלק מוטורס: מאזדה, פורד) ----------
+   דלק מוטורס מפרסמת שירות שמחזיר את קוד הצבע המקורי לפי מספר הרישוי,
+   בתשובת JSON ועם CORS פתוח — ולכן הוא נקרא ישירות מהדפדפן, בלי שרת
+   ביניים ובלי לשנות את מבנה האפליקציה. שאר היבואנים אינם ניתנים לקריאה
+   כך (אין CORS, ובחלקם הגנת בוטים) ונשארים עם קישור בלבד.
+
+   שתי הגנות מובנות:
+   1. התשובה כוללת מספר שלדה — הוא מוצלב מול השלדה שבמאגר לפני הצגה, כדי
+      שלא נציג צבע של רכב אחר. השלדה בתשובה חלקית (חסרה קידומת ה-WMI),
+      ולכן ההשוואה היא התאמת סיומת ולא שוויון.
+   2. כל כשל — רשת, תשובה ריקה, או אי-התאמת שלדה — מסתיים בשקט: השורה
+      פשוט נשארת כפי שהיא. לעולם לא מוצגת שגיאה על סמך שירות צד-שלישי */
+
+const DELEK_COLOR_API = "https://serviceforms.delek-motors.co.il/Home/GetColorCodes";
+const DELEK_BRAND_IDS = { Mazda: 1, Ford: 2 };
+const COLOR_CODE_KEY = "colorcode:";
+
+function loadCachedColorCode(plateNumber) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(COLOR_CODE_KEY + plateNumber));
+    return stored && stored.code ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedColorCode(plateNumber, entry) {
+  try {
+    localStorage.setItem(COLOR_CODE_KEY + plateNumber, JSON.stringify(entry));
+  } catch {
+    // אחסון לא זמין (מצב פרטי וכו') — פשוט לא שומרים
+  }
+}
+
+// קוד הצבע אינו משתנה לאורך חיי הרכב, ולכן נשמר ללא תפוגה. תשובה ריקה
+// אינה נשמרת: ייתכן שהיבואן יוסיף את הרכב מאוחר יותר
+function renderColorCode(entry) {
+  const dd = resultDetails.querySelector('dd[data-role="color"]');
+  if (!dd) return;
+  dd.querySelector(".row-link")?.remove();
+  const text = entry.name ? `קוד יצרן: ${entry.code} · ${entry.name}` : `קוד יצרן: ${entry.code}`;
+  dd.appendChild(el("span", "color-code", text));
+}
+
+function chassisAgrees(apiChassis, registryChassis) {
+  const a = String(apiChassis || "").toUpperCase().trim();
+  const b = String(registryChassis || "").toUpperCase().trim();
+  if (a.length < 8 || b.length < 8) return false;
+  return b.endsWith(a) || a.endsWith(b);
+}
+
+function fetchColorCode(record, plateNumber, guard) {
+  const brandId = DELEK_BRAND_IDS[makerEnglish(record.tozeret_nm)];
+  if (!brandId) return;
+
+  const cached = loadCachedColorCode(plateNumber);
+  if (cached) {
+    renderColorCode(cached);
+    return;
+  }
+
+  const url = `${DELEK_COLOR_API}?brandId=${brandId}&licenseNumber=${encodeURIComponent(plateNumber)}`;
+  fetch(url)
+    .then((response) => (response.ok ? response.json() : null))
+    .then(guard((payload) => {
+      const row = payload && Array.isArray(payload.data) ? payload.data[0] : null;
+      if (!row || !row.colorCode) return;
+      if (!chassisAgrees(row.chassisNumber, record.misgeret)) return;
+      const entry = { code: row.colorCode, name: row.colorName || "" };
+      saveCachedColorCode(plateNumber, entry);
+      renderColorCode(entry);
+    }))
+    .catch(() => {});
 }
 
 /* ---------- לוגו היצרן ----------
@@ -1790,6 +1868,9 @@ function startEnrichments(record, plateNumber, options, token) {
   // הצלבת יצרן מול מספר השלדה — פענוח מקומי, בלי בקשת רשת. השורה
   // מתווספת מיד אחרי שורות הבסיס, לפני שורות ההעשרה
   renderVinCheck(record);
+  // קוד צבע היצרן מהיבואן — רק במאגרים שמפתחם מספר רישוי, אחרת מספר
+  // צמ"ה עלול להתפרש כמספר רכב אצל היבואן ולהחזיר צבע של רכב אחר
+  if (plateKeyed) fetchColorCode(record, plateNumber, guard);
   // קופסת חידוש הרישיון — רק במאגרים שבהם רישיון פג הוא מצב שאפשר
   // ומוטב לתקן (רכב פעיל בבעלות פרטית); רכב מבוטל/לא-פעיל מקבל באנר
   if (options.renewal) renderRenewalBox(record);

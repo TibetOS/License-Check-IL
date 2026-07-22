@@ -594,6 +594,20 @@ body {
   color: #1e40af;
 }
 
+/* קוד צבע היצרן, כשהתקבל מהיבואן — נספח לשורת "צבע" */
+.color-code {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 /* קישור איתור קוד צבע היצרן, נספח לשורת "צבע" */
 .row-link {
   display: inline-block;
